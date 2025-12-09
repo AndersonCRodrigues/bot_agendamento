@@ -1,0 +1,29 @@
+# Core Web Framework
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Data Validation
+pydantic
+pydantic-settings
+
+# LangChain Stack (latest compatible versions)
+langchain
+langchain-openai
+langchain-core
+langgraph
+
+# Database
+motor
+pymongo
+
+# AI APIs
+openai
+
+# Caching
+redis
+
+# Utilities
+python-dotenv
+httpx
+python-dateutil
