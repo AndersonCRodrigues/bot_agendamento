@@ -1,11 +1,10 @@
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 
 
 class ServiceInfo(BaseModel):
     """Informação compacta de serviço"""
 
-    id: str
     name: str
     duration: int
     price: float
@@ -14,12 +13,12 @@ class ServiceInfo(BaseModel):
 class ProfessionalInfo(BaseModel):
     """Informação compacta de profissional"""
 
-    id: str
     name: str
     services: List[str]
 
 
 class FullAgenda(BaseModel):
+
     professionals: Dict[str, ProfessionalInfo]
     services: Dict[str, ServiceInfo]
     availability: Dict[str, Dict[str, Dict[str, List[str]]]]
@@ -28,26 +27,12 @@ class FullAgenda(BaseModel):
         json_schema_extra = {
             "example": {
                 "professionals": {
-                    "A1": {"id": "A1", "name": "Ana Ribeiro", "services": ["S1", "S2"]},
-                    "A2": {
-                        "id": "A2",
-                        "name": "Maria Santos",
-                        "services": ["S1", "S3"],
-                    },
+                    "A1": {"name": "Ana Ribeiro", "services": ["S1", "S2"]},
+                    "A2": {"name": "Maria Santos", "services": ["S1", "S3"]},
                 },
                 "services": {
-                    "S1": {
-                        "id": "S1",
-                        "name": "Limpeza de Pele",
-                        "duration": 60,
-                        "price": 180,
-                    },
-                    "S2": {
-                        "id": "S2",
-                        "name": "Peeling Facial",
-                        "duration": 60,
-                        "price": 220,
-                    },
+                    "S1": {"name": "Limpeza de Pele", "duration": 60, "price": 180},
+                    "S2": {"name": "Peeling Facial", "duration": 60, "price": 220},
                 },
                 "availability": {
                     "A1": {"S1": {"2025-12-10": ["08:00", "09:00", "10:00"]}}
@@ -62,7 +47,7 @@ class FilteredAgenda(BaseModel):
     service_name: Optional[str] = None
     price: Optional[float] = None
     duration: Optional[int] = None
-    options: List[Dict[str, Any]] = Field(default_factory=list)
+    options: List[Dict[str, any]] = Field(default_factory=list)
 
     class Config:
         json_schema_extra = {
