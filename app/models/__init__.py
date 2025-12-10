@@ -5,18 +5,25 @@ from .agent import (
     KanbanStatus,
     SentimentAnalysisResult,
     IntentAnalysisResult,
-    AgentResponse,
 )
-from .customer import Installment, Policy, CustomerContext
-from .chat import ChatRequest, ChatResponse
-from .knowledge import (
-    KnowledgeEntryCreate,
-    KnowledgeEntryUpdate,
-    KnowledgeEntry,
-    FAQResponse,
-    KnowledgeListResponse,
-    KnowledgeBulkCreate,
-    KnowledgeBulkResponse,
+from .customer import CustomerProfile
+from .chat import (
+    ChatRequest,
+    ChatResponse,
+    Directives,
+    AppointmentDirective,
+    UpdateUserDirective,
+    CostInfo,
+)
+from .company import CompanyConfig, CompanyConfigDB
+from .usage import TokenUsageRecord, TokenUsageAggregation, UsageMetricsRequest
+from .scheduling import (
+    FullAgenda,
+    FilteredAgenda,
+    ServiceInfo,
+    ProfessionalInfo,
+    AvailabilitySearchParams,
+    AppointmentConfirmation,
 )
 
 __all__ = [
@@ -26,17 +33,22 @@ __all__ = [
     "KanbanStatus",
     "SentimentAnalysisResult",
     "IntentAnalysisResult",
-    "AgentResponse",
-    "Installment",
-    "Policy",
-    "CustomerContext",
+    "CustomerProfile",
     "ChatRequest",
     "ChatResponse",
-    "KnowledgeEntryCreate",
-    "KnowledgeEntryUpdate",
-    "KnowledgeEntry",
-    "FAQResponse",
-    "KnowledgeListResponse",
-    "KnowledgeBulkCreate",
-    "KnowledgeBulkResponse",
+    "Directives",
+    "AppointmentDirective",
+    "UpdateUserDirective",
+    "CostInfo",
+    "CompanyConfig",
+    "CompanyConfigDB",
+    "TokenUsageRecord",
+    "TokenUsageAggregation",
+    "UsageMetricsRequest",
+    "FullAgenda",
+    "FilteredAgenda",
+    "ServiceInfo",
+    "ProfessionalInfo",
+    "AvailabilitySearchParams",
+    "AppointmentConfirmation",
 ]

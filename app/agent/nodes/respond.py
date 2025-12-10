@@ -1,65 +1,82 @@
 import logging
 import json
 from ..state import GraphState
-from ..prompts import build_dynamic_prompt
+from ..prompts import build_optimized_prompt
 from ...services import openai_service
-from ...models import ChatResponse, Directives
+from ...services.usage_service import usage_service
+from ...tools.availability_tool import availability_tool
 
 logger = logging.getLogger(__name__)
 
 
 async def agent_respond_node(state: GraphState) -> GraphState:
+
     try:
         logger.info("[RESPOND] Gerando resposta do agente")
 
-        # 1. Constrói o Prompt Dinâmico
-        # Usa o 'rag_formatted' que agora contém a AGENDA
-        system_prompt = build_dynamic_prompt(
+        agenda_context = _build_agenda_context(state)
+
+        system_prompt = build_optimized_prompt(
             config=state["company_config"],
-            customer_context=_get_customer_str(state["customer_profile"]),
-            agenda_context=state["rag_formatted"],
+            customer_context=_format_customer_context(state["customer_profile"]),
+            agenda_context=agenda_context,
             is_data_complete=state["is_data_complete"],
+            intent=state["intent_result"].intent,
+            sentiment=state["sentiment_result"].sentiment,
         )
 
         messages = [{"role": "system", "content": system_prompt}]
 
-        # Histórico Recente
-        for msg in state["recent_history"]:
+        for msg in state["recent_history"][-4:]:
             messages.append({"role": msg["role"], "content": msg["content"]})
 
-        # Mensagem Atual
         messages.append({"role": "user", "content": state["user_message"]})
 
-        # 2. Chamada OpenAI (JSON Mode)
         response = await openai_service.chat_completion(
             messages=messages,
-            temperature=0.2,  # Baixa temperatura para seguir regras
+            temperature=0.2,
             response_format={"type": "json_object"},
         )
 
-        # 3. Parse e Validação
         content = response["content"]
         try:
             response_dict = json.loads(content)
 
-            # Garante que a estrutura bate com o ChatResponse esperado pelo Backend
-            # Aqui criamos apenas a parte 'interna' da resposta
-            # O objeto ChatResponse completo é montado no final (Main ou Process Decision)
-            # Mas vamos salvar no state como um dict por enquanto
-
-            # Validação básica de chaves
             if "directives" not in response_dict:
                 raise ValueError("JSON sem campo 'directives'")
 
-        except json.JSONDecodeError:
-            logger.error(f"[RESPOND] Erro JSON do LLM: {content}")
-            raise
+            if "response_text" not in response_dict:
+                raise ValueError("JSON sem campo 'response_text'")
+
+            if "kanban_status" not in response_dict:
+                raise ValueError("JSON sem campo 'kanban_status'")
+
+        except json.JSONDecodeError as e:
+            logger.error(f"[RESPOND] Erro ao decodificar JSON: {content}")
+            raise ValueError(f"LLM retornou JSON inválido: {str(e)}")
+
+        prompt_tokens = response["usage"]["prompt_tokens"]
+        completion_tokens = response["usage"]["completion_tokens"]
+
+        await usage_service.track_usage(
+            company_id=state["company_id"],
+            session_id=state["session_id"],
+            input_tokens=prompt_tokens,
+            output_tokens=completion_tokens,
+            model=response["model"],
+            node_name="respond",
+        )
+
+        logger.info(
+            f"[RESPOND] Tokens usados: {prompt_tokens} input + "
+            f"{completion_tokens} output = {prompt_tokens + completion_tokens} total"
+        )
 
         return {
             **state,
-            "llm_response_raw": response_dict,  # Guardamos o dict puro para processar depois
-            "prompt_tokens": response["usage"]["prompt_tokens"],
-            "completion_tokens": response["usage"]["completion_tokens"],
+            "llm_response_raw": response_dict,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
         }
 
     except Exception as e:
@@ -67,6 +84,26 @@ async def agent_respond_node(state: GraphState) -> GraphState:
         return {**state, "error": str(e)}
 
 
-def _get_customer_str(profile) -> str:
-    # Helper simples para reformatar se necessário
-    return f"Nome: {profile.nome}, Email: {profile.email}, Tel: {profile.telefone}"
+def _build_agenda_context(state: GraphState) -> str:
+
+    filtered = state.get("filtered_agenda")
+
+    if not filtered or not filtered.options:
+        return (
+            "AGENDA: Cliente perguntou sobre agendamento mas não especificou "
+            "serviço ou não há horários disponíveis. Pergunte qual serviço deseja "
+            "ou confirme os dados primeiro."
+        )
+
+    return availability_tool.format_for_llm(filtered)
+
+
+def _format_customer_context(profile) -> str:
+    """Formata contexto do cliente de forma compacta"""
+    status = "COMPLETO" if profile.get("is_data_complete") else "INCOMPLETO"
+
+    return (
+        f"Nome: {profile.get('nome') or 'Não informado'} | "
+        f"Email: {profile.get('email') or 'Não informado'} | "
+        f"Cadastro: {status}"
+    )

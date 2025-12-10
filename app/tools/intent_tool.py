@@ -12,15 +12,15 @@ logger = logging.getLogger(__name__)
 
 
 INTENT_SYSTEM_PROMPT = """
-Você é um especialista em classificação de intenção para um Bot de Agendamento.
+Você é especialista em classificação de intenção para Bot de Agendamento.
 
-Classifique a intenção do usuário em UMA destas categorias:
+Classifique a intenção do usuário em UMA categoria:
 
-- SCHEDULING: Usuário quer marcar um horário, pergunta disponibilidade, aceita uma sugestão de horário.
-- RESCHEDULE: Usuário quer trocar/alterar a data ou horário de um agendamento existente.
-- CANCELLATION: Usuário quer cancelar um agendamento ou desistir do serviço.
-- INFO: Usuário pede informações (preço, endereço, como funciona) ou tira dúvidas gerais.
-- HUMAN_HANDOFF: Usuário pede para falar com atendente, pessoa real, humano ou está muito frustrado.
+- SCHEDULING: Cliente quer marcar horário, pergunta disponibilidade, aceita sugestão
+- RESCHEDULE: Cliente quer trocar/alterar data ou horário de agendamento existente
+- CANCELLATION: Cliente quer cancelar agendamento ou desistir do serviço
+- INFO: Cliente pede informações (preço, endereço, como funciona) ou tira dúvidas
+- HUMAN_HANDOFF: Cliente pede atendente humano ou está muito frustrado
 
 Retorne JSON:
 {
@@ -33,24 +33,24 @@ Retorne JSON:
 class IntentTool:
 
     def __init__(self):
-        self.cache_ttl = 1800  # 30 minutos
+        self.cache_ttl = 1800
         self._load_patterns()
 
     def _load_patterns(self):
         """Carrega padrões Regex para classificação rápida"""
 
         self.scheduling_patterns = [
-            r"\b(marcar|agendar|reservar)\b",
+            r"\b(marcar|agendar|reservar|horário)\b",
             r"\b(tem|têm)\s+(horário|vaga|disponibilidade)\b",
-            r"\b(quero|gostaria de)\s+(ir|passar|fazer)\b",
-            r"\b(pode ser|topo|fechado|combinado)\b",  # Aceite de sugestão
-            r"\b(segunda|terça|quarta|quinta|sexta|sábado|domingo|amanhã|hoje)\b",  # Menção de data
-            r"\b(\d{1,2})[h:](\d{2})?\b",  # Menção de hora (ex: 14h, 14:30)
+            r"\b(quero|gostaria de)\s+(ir|passar|fazer|marcar)\b",
+            r"\b(pode ser|topo|fechado|combinado|confirmo)\b",
+            r"\b(segunda|terça|quarta|quinta|sexta|sábado|domingo|amanhã|hoje)\b",
+            r"\b(\d{1,2})[h:](\d{2})?\b",
         ]
 
         self.reschedule_patterns = [
             r"\b(trocar|mudar|alterar|remarcar|reagendar)\b",
-            r"\b(não posso|imprevisto|surgiu um problema)\b.*\b(ir|comparecer)\b",
+            r"\b(não posso|imprevisto|surgiu)\b.*\b(ir|comparecer)\b",
             r"\b(outra data|outro dia|outro horário)\b",
             r"\b(adiar|postergar)\b",
         ]
@@ -71,11 +71,14 @@ class IntentTool:
         self.handoff_patterns = [
             r"\b(falar|conversar)\s+com\s+(alguém|atendente|humano|pessoa)\b",
             r"\b(preciso de ajuda|não estou entendendo)\b",
-            r"\b(falar|ligar)\s+na\s+clínica\b",
+            r"\b(atendimento humano|pessoa real)\b",
         ]
 
     async def analyze(
-        self, message: str, recent_history: List[Dict[str, str]]
+        self,
+        message: str,
+        recent_history: List[Dict[str, str]],
+        customer_context: dict = None,
     ) -> IntentAnalysisResult:
         try:
             cache_key = self._get_cache_key(message, recent_history)
@@ -84,13 +87,11 @@ class IntentTool:
                 logger.debug("Intent cache hit")
                 return IntentAnalysisResult(**cached)
 
-            # 1. Tenta Regex (Rápido e Barato)
             pattern_result = self._pattern_match(message)
             if pattern_result:
                 cache.set(cache_key, pattern_result.model_dump(), self.cache_ttl)
                 return pattern_result
 
-            # 2. Fallback para LLM (Inteligente)
             result = await self._call_llm(message, recent_history)
 
             cache.set(cache_key, result.model_dump(), self.cache_ttl)
@@ -98,7 +99,6 @@ class IntentTool:
 
         except Exception as e:
             logger.error(f"Erro na análise de intenção: {e}")
-            # Fallback seguro: Assume INFO para não travar fluxo
             return IntentAnalysisResult(
                 intent=Intent.INFO,
                 reason="Erro na análise, classificado como INFO por segurança",
@@ -107,7 +107,6 @@ class IntentTool:
     def _pattern_match(self, message: str) -> Optional[IntentAnalysisResult]:
         message_lower = message.lower()
 
-        # Ordem de prioridade importa
         for pattern in self.handoff_patterns:
             if re.search(pattern, message_lower):
                 return IntentAnalysisResult(
@@ -159,7 +158,7 @@ Retorne JSON."""
 
         response = await openai_service.chat_completion(
             messages=messages,
-            model=settings.TOOL_MODEL,  # gpt-4o-mini
+            model=settings.TOOL_MODEL,
             temperature=0.1,
             response_format={"type": "json_object"},
         )

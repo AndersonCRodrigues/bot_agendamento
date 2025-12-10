@@ -12,16 +12,15 @@ logger = logging.getLogger(__name__)
 
 
 SENTIMENT_SYSTEM_PROMPT = """
-Você é um especialista em análise de sentimento para atendimento ao cliente.
+Você é especialista em análise de sentimento para atendimento de agendamento.
 
-Classifique o sentimento em UMA das categorias:
-- positivo: Cliente satisfeito, cooperativo
+Classifique o sentimento em UMA categoria:
+- positivo: Cliente satisfeito, cooperativo, animado
 - neutro: Cliente neutro, apenas informativo
 - negativo: Cliente insatisfeito mas controlado
 - raiva: Cliente irritado, agressivo
 - ansioso: Cliente preocupado, urgente
 - confuso: Cliente perdido, não entende
-- envergonhado: Cliente constrangido pela dívida
 - triste: Cliente em dificuldade emocional
 
 Retorne JSON:
@@ -31,7 +30,7 @@ Retorne JSON:
   "confidence": "baixa" | "média" | "alta"
 }
 
-Considere o contexto histórico para ponderar emoções passadas.
+Considere o contexto histórico para avaliar evolução emocional.
 """
 
 
@@ -39,40 +38,25 @@ class SentimentTool:
     """Tool de análise de sentimento"""
 
     def __init__(self):
-        self.cache_ttl = 3600  # 1 hora
+        self.cache_ttl = 3600
 
     async def analyze(
         self, message: str, recent_history: List[Dict[str, str]]
     ) -> SentimentAnalysisResult:
-        """
-        Analisa o sentimento da mensagem
-
-        Args:
-            message: Mensagem atual do usuário
-            recent_history: Histórico recente de mensagens
-
-        Returns:
-            Resultado da análise de sentimento
-        """
         try:
-            # Verifica cache
             cache_key = self._get_cache_key(message, recent_history)
             cached = cache.get(cache_key)
             if cached:
                 logger.debug("Sentiment cache hit")
                 return SentimentAnalysisResult(**cached)
 
-            # Tenta classificação rápida (heurísticas)
             quick_result = self._quick_classify(message)
             if quick_result:
                 logger.debug("Sentiment via heurística")
                 cache.set(cache_key, quick_result.model_dump(), self.cache_ttl)
                 return quick_result
 
-            # Fallback para LLM
             result = await self._call_llm(message, recent_history)
-
-            # Cacheia
             cache.set(cache_key, result.model_dump(), self.cache_ttl)
 
             logger.debug(f"Sentiment via LLM: {result.sentiment}")
@@ -80,81 +64,61 @@ class SentimentTool:
 
         except Exception as e:
             logger.error(f"Erro na análise de sentimento: {e}")
-            # Fallback seguro
             return SentimentAnalysisResult(
                 sentiment=Sentiment.NEUTRO, score=50, confidence="baixa"
             )
 
     def _quick_classify(self, message: str) -> Optional[SentimentAnalysisResult]:
-        """
-        Classificação rápida via regex patterns
-        Economiza ~35% das chamadas LLM
-        """
+        """Classificação rápida via regex patterns"""
         message_lower = message.lower()
 
-        # RAIVA - Patterns agressivos
         raiva_patterns = [
             r"\b(absurdo|ridículo|inadmissível|vergonha|palhaçada)\b",
             r"\b(não aguento|estou farto|chega|basta)\b",
-            r"[!]{2,}",  # Múltiplas exclamações
+            r"[!]{2,}",
         ]
         if any(re.search(p, message_lower) for p in raiva_patterns):
             return SentimentAnalysisResult(
                 sentiment=Sentiment.RAIVA, score=85, confidence="alta"
             )
 
-        # POSITIVO - Patterns cooperativos
         positivo_patterns = [
-            r"\b(obrigad[oa]|agradeço|perfeito|ótimo|excelente)\b",
-            r"\b(vou pagar|pode enviar|tudo bem|certo)\b",
+            r"\b(obrigad[oa]|agradeço|perfeito|ótimo|excelente|maravilhoso)\b",
+            r"\b(pode marcar|confirmo|fechado|topo|combinado)\b",
         ]
         if any(re.search(p, message_lower) for p in positivo_patterns):
             return SentimentAnalysisResult(
                 sentiment=Sentiment.POSITIVO, score=80, confidence="alta"
             )
 
-        # ANSIOSO - Urgência
         ansioso_patterns = [
-            r"\b(urgente|rápido|agora|hoje mesmo)\b",
-            r"\b(preciso resolver|não posso esperar)\b",
+            r"\b(urgente|rápido|agora|hoje mesmo|preciso)\b",
+            r"\b(não posso esperar|é para já)\b",
         ]
         if any(re.search(p, message_lower) for p in ansioso_patterns):
             return SentimentAnalysisResult(
                 sentiment=Sentiment.ANSIOSO, score=75, confidence="média"
             )
 
-        # CONFUSO - Dúvidas
         confuso_patterns = [
             r"\b(não entend[io]|como assim|o que é)\b",
             r"\b(explica|dúvida|confus[oa])\b",
-            r"\?{2,}",  # Múltiplas interrogações
+            r"\?{2,}",
         ]
         if any(re.search(p, message_lower) for p in confuso_patterns):
             return SentimentAnalysisResult(
                 sentiment=Sentiment.CONFUSO, score=70, confidence="média"
             )
 
-        # ENVERGONHADO - Constrangimento
-        envergonhado_patterns = [
-            r"\b(desculpa|perdão|envergonhad[oa])\b",
-            r"\b(não queria|foi mal)\b",
-        ]
-        if any(re.search(p, message_lower) for p in envergonhado_patterns):
-            return SentimentAnalysisResult(
-                sentiment=Sentiment.ENVERGONHADO, score=65, confidence="média"
-            )
-
-        # TRISTE - Dificuldade
         triste_patterns = [
             r"\b(difícil|complicad[oa]|não consigo)\b",
-            r"\b(desempregad[oa]|sem dinheiro|sem condições)\b",
+            r"\b(problema|situação difícil)\b",
         ]
         if any(re.search(p, message_lower) for p in triste_patterns):
             return SentimentAnalysisResult(
                 sentiment=Sentiment.TRISTE, score=70, confidence="média"
             )
 
-        # Não conseguiu classificar rapidamente
         return None
 
     async def _call_llm(
@@ -162,7 +126,6 @@ class SentimentTool:
     ) -> SentimentAnalysisResult:
         """Chamada LLM para casos ambíguos"""
 
-        # Formata histórico para contexto
         history_text = self._format_history(recent_history)
 
         prompt = f"""Analise o sentimento da seguinte mensagem do cliente:
@@ -182,12 +145,11 @@ Retorne APENAS o JSON com o resultado da análise."""
 
         response = await openai_service.chat_completion(
             messages=messages,
-            model=settings.TOOL_MODEL,  # gpt-4o-mini (mais barato)
+            model=settings.TOOL_MODEL,
             temperature=0.1,
             response_format={"type": "json_object"},
         )
 
-        # Parse JSON
         result_dict = json.loads(response["content"])
         return SentimentAnalysisResult(**result_dict)
 
@@ -197,7 +159,7 @@ Retorne APENAS o JSON com o resultado da análise."""
             return "(Sem histórico anterior)"
 
         formatted = []
-        for msg in recent_history[-4:]:  # Últimas 4 mensagens
+        for msg in recent_history[-4:]:
             role = "Cliente" if msg["role"] == "user" else "Agente"
             formatted.append(f"{role}: {msg['content']}")
 
@@ -205,7 +167,6 @@ Retorne APENAS o JSON com o resultado da análise."""
 
     def _get_cache_key(self, message: str, recent_history: List[Dict[str, str]]) -> str:
         """Gera chave de cache única"""
-        # Hash da mensagem + últimas 2 mensagens do histórico
         context = message
         if recent_history:
             context += "".join([m["content"] for m in recent_history[-2:]])
@@ -214,5 +175,4 @@ Retorne APENAS o JSON com o resultado da análise."""
         return f"sentiment:{hash_obj.hexdigest()}"
 
 
-# Instância global
 sentiment_tool = SentimentTool()

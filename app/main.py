@@ -8,6 +8,7 @@ from .database import mongodb
 from .agent import create_agent_graph, GraphState
 from .models import ChatRequest, ChatResponse, CustomerProfile, CompanyConfig, CostInfo
 from .services.usage_service import usage_service
+from .services.company_service import company_service
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL),
@@ -18,11 +19,11 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("🚀 Iniciando Bot Agendador...")
+    logger.info("Iniciando Bot Agendador Multi-Nicho...")
     await mongodb.connect()
-    logger.info("✅ Sistema pronto para receber agendamentos!")
+    logger.info("Sistema pronto para receber agendamentos")
     yield
-    logger.info("🛑 Encerrando aplicação...")
+    logger.info("Encerrando aplicação...")
     await mongodb.close()
 
 
@@ -49,74 +50,55 @@ async def chat_endpoint(request: ChatRequest):
             f"[CHAT] Nova interação. Sessão: {request.session_id} | Empresa: {request.company.nome}"
         )
 
-        # 1. Prepara Configuração (Persona)
-        # Se vier no payload (override), usa. Senão, usa Default (ou buscaria no banco)
         if request.company.config_override:
             company_config = request.company.config_override.model_dump()
         else:
-            # Em produção, aqui buscaríamos no MongoDB: db.companies.find_one(...)
-            # Por enquanto, usamos defaults do modelo
-            company_config = CompanyConfig(
-                nome_bot=f"Assistente {request.company.nome}"
-            ).model_dump()
+            config_obj = await company_service.get_config(request.company.id)
+            company_config = config_obj.model_dump()
 
-        # 2. Prepara Perfil do Cliente
         customer_profile = CustomerProfile(
             telefone=request.cliente.telefone,
             nome=request.cliente.nome,
             email=request.cliente.email,
         )
 
-        # 3. Estado Inicial do Grafo
         initial_state = GraphState(
-            # Identificadores
             company_id=request.company.id,
             session_id=request.session_id,
             user_message=request.cliente.mensagem,
-            start_chat=None,  # Lógica de start chat removida ou nula por padrão
-            # Objetos Ricos
+            start_chat=None,
             company_config=company_config,
             customer_profile=customer_profile,
-            company_agenda=[
-                p.model_dump() for p in request.company.equipe
-            ],  # A Agenda Bruta
-            # Estado Vazio
+            company_agenda=[p.model_dump() for p in request.company.equipe],
             chat_history=[],
-            recent_history=[],  # Será populado pelo load_context se existir sessão anterior
+            recent_history=[],
             rag_knowledge=[],
             rag_formatted="",
             sentiment_result=None,
             intent_result=None,
-            # Flags
             sentiment_analyzed=False,
             intent_analyzed=False,
             tools_validated=False,
-            is_data_complete=False,  # Será calculado no check_integrity
-            # Saída
+            is_data_complete=False,
             final_response=None,
-            # Metadata
             tools_called=[],
             prompt_tokens=0,
             completion_tokens=0,
             error=None,
         )
 
-        # 4. Executa o Grafo
         graph = create_agent_graph()
         final_state = await graph.ainvoke(initial_state)
 
-        # 5. Tratamento de Erros
         if final_state.get("error") and not final_state.get("final_response"):
             logger.error(f"[CHAT] Erro crítico no fluxo: {final_state['error']}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Erro no processamento do bot: {final_state['error']}",
+                detail=f"Erro no processamento: {final_state['error']}",
             )
 
-        # 6. Retorna Resposta
         response = final_state["final_response"]
 
-        # Popula info de custo na resposta
         response.cost_info = CostInfo(
             total_tokens=final_state.get("prompt_tokens", 0)
             + final_state.get("completion_tokens", 0),
@@ -124,7 +106,7 @@ async def chat_endpoint(request: ChatRequest):
             output_tokens=final_state.get("completion_tokens", 0),
         )
 
-        logger.info(f"[CHAT] ✅ Sucesso. Diretiva: {response.directives.type}")
+        logger.info(f"[CHAT] Sucesso. Diretiva: {response.directives.type}")
 
         return response
 
@@ -137,17 +119,97 @@ async def chat_endpoint(request: ChatRequest):
         )
 
 
-@app.get("/metrics/{company_id}/usage", tags=["Metrics"])
-async def get_usage_metrics(company_id: str, period: str = "daily"):
+@app.post("/companies/{company_id}/config", tags=["Companies"])
+async def create_or_update_company_config(company_id: str, config: CompanyConfig):
     """
-    Retorna consumo de tokens.
-    Period: 'daily', 'monthly', 'yearly', 'total'
+    Cria ou atualiza configuração personalizada de uma empresa.
     """
     try:
-        metrics = await usage_service.get_metrics(company_id, period)
-        return {"company_id": company_id, "period": period, "data": metrics}
+        result = await company_service.create_or_update_config(company_id, config)
+        return {
+            "status": "success",
+            "company_id": result.company_id,
+            "updated_at": result.updated_at.isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Erro ao criar/atualizar config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/companies/{company_id}/config", tags=["Companies"])
+async def get_company_config(company_id: str):
+    """Recupera configuração de uma empresa"""
+    try:
+        config = await company_service.get_config(company_id)
+        return {"company_id": company_id, "config": config}
+    except Exception as e:
+        logger.error(f"Erro ao buscar config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/companies", tags=["Companies"])
+async def list_companies(skip: int = 0, limit: int = 50):
+    """Lista todas as empresas configuradas"""
+    try:
+        result = await company_service.list_companies(skip, limit)
+        return result
+    except Exception as e:
+        logger.error(f"Erro ao listar companies: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/companies/{company_id}/config", tags=["Companies"])
+async def delete_company_config(company_id: str):
+    """Desativa configuração de uma empresa"""
+    try:
+        deleted = await company_service.delete_config(company_id)
+        if deleted:
+            return {"status": "success", "company_id": company_id}
+        raise HTTPException(status_code=404, detail="Empresa não encontrada")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao deletar config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/metrics/usage", tags=["Metrics"])
+async def get_usage_metrics(
+    company_id: str = None,
+    period: str = "daily",
+    start_date: str = None,
+    end_date: str = None,
+):
+
+    try:
+        metrics = await usage_service.get_metrics(
+            company_id=company_id,
+            period=period,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        return {
+            "company_id": company_id or "all",
+            "period": period,
+            "filters": {
+                "start_date": start_date,
+                "end_date": end_date,
+            },
+            "data": metrics,
+        }
     except Exception as e:
         logger.error(f"Erro metrics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/metrics/ranking", tags=["Metrics"])
+async def get_company_ranking(period: str = "monthly", limit: int = 10):
+    """Retorna ranking de empresas por consumo de tokens"""
+    try:
+        ranking = await usage_service.get_company_ranking(period=period, limit=limit)
+        return {"period": period, "ranking": ranking}
+    except Exception as e:
+        logger.error(f"Erro ranking: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
