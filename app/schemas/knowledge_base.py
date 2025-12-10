@@ -59,7 +59,7 @@ class CompanyKnowledgeBase:
         embedding: List[float],
     ) -> Dict[str, Any]:
         """Cria documento completo para inserir no MongoDB"""
-        now = datetime.utcnow()
+        now = datetime.now()
         content = CompanyKnowledgeBase.format_content(question, answer, category)
         keywords = CompanyKnowledgeBase.extract_keywords(question, answer)
 

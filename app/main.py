@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
+from openai import OpenAIError
 
 from .config import settings
 from .database import mongodb
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Iniciando Bot Agendador Multi-Nicho v2 (OTIMIZADO)")
+    logger.info("Iniciando Bot Agendador Multi-Nicho v2.1 (OTIMIZADO)")
     await mongodb.connect()
     logger.info("Sistema pronto")
     yield
@@ -29,7 +30,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Bot Agendador Multi-Nicho OTIMIZADO",
-    description="API com bot de agendamento otimizado",
+    description="API com bot de agendamento otimizado para multiplos nichos",
     version="2.1.0",
     lifespan=lifespan,
 )
@@ -45,10 +46,9 @@ app.add_middleware(
 
 @app.post("/chat", response_model=ChatResponse, tags=["Chat"])
 async def chat_endpoint(request: ChatRequest):
-
     try:
         logger.info(
-            f"[CHAT] Nova interação. Sessão: {request.session_id} | "
+            f"[CHAT] Nova interacao. Sessao: {request.session_id} | "
             f"Empresa: {request.company.nome}"
         )
 
@@ -87,13 +87,14 @@ async def chat_endpoint(request: ChatRequest):
             prompt_tokens=0,
             completion_tokens=0,
             error=None,
+            llm_response_raw={},
         )
 
         graph = create_agent_graph()
         final_state = await graph.ainvoke(initial_state)
 
         if final_state.get("error") and not final_state.get("final_response"):
-            logger.error(f"[CHAT] Erro crítico: {final_state['error']}")
+            logger.error(f"[CHAT] Erro critico: {final_state['error']}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Erro no processamento: {final_state['error']}",
@@ -120,16 +121,22 @@ async def chat_endpoint(request: ChatRequest):
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"[CHAT] Erro não tratado: {e}", exc_info=True)
+    except OpenAIError as e:
+        logger.error(f"[CHAT] Erro OpenAI: {e}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servico de IA temporariamente indisponivel",
+        )
+    except Exception as e:
+        logger.error(f"[CHAT] Erro nao tratado: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno do servidor",
         )
 
 
 @app.post("/companies/{company_id}/config", tags=["Companies"])
 async def create_or_update_company_config(company_id: str, config: CompanyConfig):
-    """Cria ou atualiza configuração personalizada"""
     try:
         result = await company_service.create_or_update_config(company_id, config)
         return {
@@ -138,45 +145,42 @@ async def create_or_update_company_config(company_id: str, config: CompanyConfig
             "updated_at": result.updated_at.isoformat(),
         }
     except Exception as e:
-        logger.error(f"Erro ao criar/atualizar config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Erro ao criar/atualizar config: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro ao processar configuracao")
 
 
 @app.get("/companies/{company_id}/config", tags=["Companies"])
 async def get_company_config(company_id: str):
-    """Recupera configuração"""
     try:
         config = await company_service.get_config(company_id)
         return {"company_id": company_id, "config": config}
     except Exception as e:
-        logger.error(f"Erro ao buscar config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Erro ao buscar config: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro ao buscar configuracao")
 
 
 @app.get("/companies", tags=["Companies"])
 async def list_companies(skip: int = 0, limit: int = 50):
-    """Lista todas as empresas"""
     try:
         result = await company_service.list_companies(skip, limit)
         return result
     except Exception as e:
-        logger.error(f"Erro ao listar companies: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Erro ao listar companies: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro ao listar empresas")
 
 
 @app.delete("/companies/{company_id}/config", tags=["Companies"])
 async def delete_company_config(company_id: str):
-    """Desativa configuração"""
     try:
         deleted = await company_service.delete_config(company_id)
         if deleted:
             return {"status": "success", "company_id": company_id}
-        raise HTTPException(status_code=404, detail="Empresa não encontrada")
+        raise HTTPException(status_code=404, detail="Empresa nao encontrada")
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Erro ao deletar config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Erro ao deletar config: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro ao deletar configuracao")
 
 
 @app.get("/metrics/usage", tags=["Metrics"])
@@ -186,7 +190,6 @@ async def get_usage_metrics(
     start_date: str = None,
     end_date: str = None,
 ):
-
     try:
         metrics = await usage_service.get_metrics(
             company_id=company_id,
@@ -200,24 +203,23 @@ async def get_usage_metrics(
             "filters": {"start_date": start_date, "end_date": end_date},
             "data": metrics,
             "optimization_note": (
-                "Sistema otimizado: economia de ~95% em tokens de prompt "
-                "através de filtragem inteligente de agenda"
+                "Sistema otimizado: economia de 95% em tokens de prompt "
+                "atraves de filtragem inteligente de agenda"
             ),
         }
     except Exception as e:
-        logger.error(f"Erro metrics: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Erro metrics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro ao buscar metricas")
 
 
 @app.get("/metrics/ranking", tags=["Metrics"])
 async def get_company_ranking(period: str = "monthly", limit: int = 10):
-    """Ranking de empresas por consumo"""
     try:
         ranking = await usage_service.get_company_ranking(period=period, limit=limit)
         return {"period": period, "ranking": ranking}
     except Exception as e:
-        logger.error(f"Erro ranking: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Erro ranking: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro ao buscar ranking")
 
 
 @app.get("/health", tags=["System"])
@@ -225,13 +227,37 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "scheduling-bot-v2-optimized",
-        "optimizations": [
-            "Agenda filtrada (95% menos tokens)",
-            "Extração de entidades sem LLM",
-            "Cache de tools",
-            "Tracking por node",
-        ],
+        "version": "2.1.0",
     }
+
+
+@app.get("/health/ready", tags=["System"])
+async def readiness_check():
+    checks = {"mongodb": False, "openai": False}
+
+    try:
+        db = mongodb.get_database()
+        await db.command("ping")
+        checks["mongodb"] = True
+    except Exception as e:
+        logger.error(f"MongoDB health check failed: {e}")
+
+    try:
+        from .services.openai_service import openai_service
+
+        test_embedding = await openai_service.get_embedding("test")
+        if len(test_embedding) > 0:
+            checks["openai"] = True
+    except Exception as e:
+        logger.error(f"OpenAI health check failed: {e}")
+
+    all_healthy = all(checks.values())
+    status_code = 200 if all_healthy else 503
+
+    return {
+        "status": "ready" if all_healthy else "not_ready",
+        "checks": checks,
+    }, status_code
 
 
 if __name__ == "__main__":

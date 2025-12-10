@@ -14,7 +14,7 @@ class CustomerProfile(BaseModel):
     is_data_complete: bool = Field(
         default=False, description="Se True, pode prosseguir para agendamento"
     )
-    last_interaction: datetime = Field(default_factory=datetime.utcnow)
+    last_interaction: datetime = Field(default_factory=datetime.now)
 
     def check_completion(self) -> bool:
         """Verifica se os dados obrigatórios existem"""

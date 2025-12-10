@@ -397,7 +397,7 @@ class RAGService:
 
             from datetime import datetime
 
-            update_doc["metadata.updated_at"] = datetime.utcnow()
+            update_doc["metadata.updated_at"] = datetime.now()
 
             # Atualiza no MongoDB
             result = await collection.update_one(
@@ -435,7 +435,7 @@ class RAGService:
                 {
                     "$set": {
                         "is_active": False,
-                        "metadata.updated_at": datetime.utcnow(),
+                        "metadata.updated_at": datetime.now(),
                     }
                 },
             )

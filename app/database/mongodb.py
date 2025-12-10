@@ -2,10 +2,16 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from typing import Optional
 import logging
 from pymongo.errors import OperationFailure
+import re
 from ..config import settings
 from ..schemas import CompanyKnowledgeBase, ChatSession
 
 logger = logging.getLogger(__name__)
+
+
+def mask_uri(uri: str) -> str:
+    pattern = r"(mongodb(?:\+srv)?://[^:]+:)([^@]+)(@.+)"
+    return re.sub(pattern, r"\1***\3", uri)
 
 
 class MongoDB:
@@ -15,14 +21,19 @@ class MongoDB:
     @classmethod
     async def connect(cls):
         try:
-            logger.info(f"Conectando ao MongoDB: {settings.MONGODB_URI}")
-            cls.client = AsyncIOMotorClient(settings.MONGODB_URI)
+            masked_uri = mask_uri(settings.MONGODB_URI)
+            logger.info(f"Conectando ao MongoDB: {masked_uri}")
+            cls.client = AsyncIOMotorClient(
+                settings.MONGODB_URI,
+                serverSelectionTimeoutMS=5000,
+                connectTimeoutMS=10000,
+            )
             cls.db = cls.client[settings.MONGODB_DB_NAME]
             await cls.client.admin.command("ping")
-            logger.info("✓ Conectado ao MongoDB com sucesso")
+            logger.info("Conectado ao MongoDB com sucesso")
             await cls._create_indexes()
         except Exception as e:
-            logger.error(f"✗ Erro ao conectar no MongoDB: {e}")
+            logger.error(f"Erro ao conectar no MongoDB: {e}")
             raise
 
     @classmethod
@@ -32,7 +43,7 @@ class MongoDB:
         except OperationFailure as e:
             if "IndexOptionsConflict" in str(e):
                 logger.warning(
-                    f"⚠ Índice já existe com opções diferentes em {collection.name}"
+                    f"Indice ja existe com opcoes diferentes em {collection.name}"
                 )
             else:
                 raise
@@ -43,36 +54,37 @@ class MongoDB:
             kb_collection = cls.db[CompanyKnowledgeBase.collection_name]
             for index in CompanyKnowledgeBase.get_indexes():
                 await kb_collection.create_index(index)
-            logger.info(
-                f"✓ Índices criados para {CompanyKnowledgeBase.collection_name}"
-            )
+            logger.info(f"Indices criados para {CompanyKnowledgeBase.collection_name}")
+
             session_collection = cls.db[ChatSession.collection_name]
             for index in ChatSession.get_indexes():
                 await session_collection.create_index(index)
+
             ttl_config = ChatSession.get_ttl_index()
             await cls.safe_create_index(
                 session_collection,
                 ttl_config["keys"],
                 expireAfterSeconds=ttl_config["expireAfterSeconds"],
             )
-            logger.info(f"✓ Índices criados para {ChatSession.collection_name}")
+            logger.info(f"Indices criados para {ChatSession.collection_name}")
+
             logger.warning(
-                "⚠ Lembre-se de criar o vector search index manualmente no MongoDB Atlas "
+                f"Lembre-se de criar o vector search index manualmente no MongoDB Atlas "
                 f"para a collection {CompanyKnowledgeBase.collection_name}"
             )
         except Exception as e:
-            logger.error(f"Erro ao criar índices: {e}")
+            logger.error(f"Erro ao criar indices: {e}")
 
     @classmethod
     async def close(cls):
         if cls.client:
             cls.client.close()
-            logger.info("✓ Conexão MongoDB fechada")
+            logger.info("Conexao MongoDB fechada")
 
     @classmethod
     def get_database(cls) -> AsyncIOMotorDatabase:
         if cls.db is None:
-            raise RuntimeError("MongoDB não está conectado. Chame connect() primeiro.")
+            raise RuntimeError("MongoDB nao esta conectado. Chame connect() primeiro.")
         return cls.db
 
 

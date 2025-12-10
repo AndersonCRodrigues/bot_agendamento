@@ -52,7 +52,7 @@ class ChatSession:
         session_id: str, company_id: str, customer_context: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Cria nova sessão"""
-        now = datetime.utcnow()
+        now = datetime.now()
         expires_at = now + timedelta(days=settings.SESSION_TTL_DAYS)
 
         return {
@@ -81,7 +81,7 @@ class ChatSession:
         return {
             "role": role,
             "content": content,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(),
             "metadata": metadata or {},
         }
 
@@ -91,7 +91,7 @@ class ChatSession:
         return {
             "question": question,
             "relevance_score": relevance_score,
-            "used_at": datetime.utcnow(),
+            "used_at": datetime.now(),
         }
 
     @staticmethod

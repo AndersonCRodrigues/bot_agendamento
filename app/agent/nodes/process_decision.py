@@ -6,7 +6,6 @@ logger = logging.getLogger(__name__)
 
 
 async def process_directives_node(state: GraphState) -> GraphState:
-
     try:
         raw = state.get("llm_response_raw", {})
 
@@ -15,6 +14,7 @@ async def process_directives_node(state: GraphState) -> GraphState:
 
         if directives_type == "appointment_confirmation":
             directives_data = _validate_and_enrich_appointment(directives_data, state)
+            directives_type = directives_data.get("type", "normal")
 
         directives = Directives(**directives_data)
 
@@ -61,11 +61,11 @@ async def process_directives_node(state: GraphState) -> GraphState:
 
 
 def _validate_and_enrich_appointment(directives_data: dict, state: GraphState) -> dict:
-
     payload = directives_data.get("payload_appointment", {})
 
     if not payload:
-        logger.warning("[PROCESS] Appointment sem payload, mantendo como está")
+        logger.warning("[PROCESS] Appointment sem payload, revertendo para normal")
+        directives_data["type"] = "normal"
         return directives_data
 
     profissional_id = payload.get("profissional_id")
@@ -85,20 +85,61 @@ def _validate_and_enrich_appointment(directives_data: dict, state: GraphState) -
 
     if missing:
         logger.error(
-            f"[PROCESS] Campos obrigatórios faltando: {missing}. " f"Payload: {payload}"
+            f"[PROCESS] Campos obrigatorios faltando: {missing}. "
+            f"Revertendo para normal. Payload: {payload}"
         )
         directives_data["type"] = "normal"
         return directives_data
 
     full_agenda = state.get("full_agenda")
 
-    if full_agenda:
-        prof_info = full_agenda.professionals.get(profissional_id)
-        service_info = full_agenda.services.get(servico_id)
+    if not full_agenda:
+        logger.error("[PROCESS] Agenda nao disponivel, revertendo para normal")
+        directives_data["type"] = "normal"
+        return directives_data
 
-        payload["profissional_name"] = prof_info.name if prof_info else None
-        payload["servico_name"] = service_info.name if service_info else None
+    prof_info = full_agenda.professionals.get(profissional_id)
+    service_info = full_agenda.services.get(servico_id)
+
+    if not prof_info:
+        logger.error(
+            f"[PROCESS] Profissional ID {profissional_id} invalido. "
+            f"Revertendo para normal"
+        )
+        directives_data["type"] = "normal"
+        return directives_data
+
+    if not service_info:
+        logger.error(
+            f"[PROCESS] Servico ID {servico_id} invalido. " f"Revertendo para normal"
+        )
+        directives_data["type"] = "normal"
+        return directives_data
+
+    if servico_id not in prof_info.services:
+        logger.error(
+            f"[PROCESS] Servico {servico_id} nao oferecido por profissional {profissional_id}. "
+            f"Revertendo para normal"
+        )
+        directives_data["type"] = "normal"
+        return directives_data
+
+    availability = full_agenda.availability.get(profissional_id, {}).get(servico_id, {})
+    date_slots = availability.get(data, [])
+
+    if hora not in date_slots:
+        logger.error(
+            f"[PROCESS] Horario {hora} nao disponivel para {profissional_id}/{servico_id} em {data}. "
+            f"Revertendo para normal"
+        )
+        directives_data["type"] = "normal"
+        return directives_data
+
+    payload["profissional_name"] = prof_info.name
+    payload["servico_name"] = service_info.name
 
     directives_data["payload_appointment"] = payload
+
+    logger.info("[PROCESS] Agendamento validado e enriquecido com sucesso")
 
     return directives_data

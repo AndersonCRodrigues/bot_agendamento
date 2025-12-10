@@ -21,7 +21,7 @@ class UsageService:
     ):
         """Registra consumo de tokens"""
         try:
-            now = datetime.utcnow()
+            now = datetime.now()
             total = input_tokens + output_tokens
 
             record = TokenUsageRecord(

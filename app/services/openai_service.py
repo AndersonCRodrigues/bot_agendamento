@@ -1,4 +1,4 @@
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAIError, APITimeoutError, APIConnectionError
 from typing import List, Dict, Any, Optional
 import logging
 from ..config import settings
@@ -7,21 +7,12 @@ logger = logging.getLogger(__name__)
 
 
 class OpenAIService:
-    """Serviço para interações com OpenAI API"""
-
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        self.client = AsyncOpenAI(
+            api_key=settings.OPENAI_API_KEY, timeout=settings.OPENAI_TIMEOUT
+        )
 
     async def get_embedding(self, text: str) -> List[float]:
-        """
-        Gera embedding para um texto
-
-        Args:
-            text: Texto para gerar embedding
-
-        Returns:
-            Lista de floats representando o embedding
-        """
         try:
             response = await self.client.embeddings.create(
                 model=settings.EMBEDDING_MODEL,
@@ -29,23 +20,23 @@ class OpenAIService:
                 dimensions=settings.EMBEDDING_DIMENSIONS,
             )
             return response.data[0].embedding
+        except APITimeoutError as e:
+            logger.error(f"Timeout ao gerar embedding: {e}")
+            raise
+        except APIConnectionError as e:
+            logger.error(f"Erro de conexao ao gerar embedding: {e}")
+            raise
+        except OpenAIError as e:
+            logger.error(f"Erro OpenAI ao gerar embedding: {e}")
+            raise
         except Exception as e:
-            logger.error(f"Erro ao gerar embedding: {e}")
+            logger.error(f"Erro inesperado ao gerar embedding: {e}")
             raise
 
     async def batch_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """
-        Gera embeddings em lote (até 2048 textos)
-
-        Args:
-            texts: Lista de textos
-
-        Returns:
-            Lista de embeddings
-        """
         try:
             if len(texts) > 2048:
-                raise ValueError("Máximo de 2048 textos por batch")
+                raise ValueError("Maximo de 2048 textos por batch")
 
             response = await self.client.embeddings.create(
                 model=settings.EMBEDDING_MODEL,
@@ -53,8 +44,17 @@ class OpenAIService:
                 dimensions=settings.EMBEDDING_DIMENSIONS,
             )
             return [item.embedding for item in response.data]
+        except APITimeoutError as e:
+            logger.error(f"Timeout ao gerar embeddings em lote: {e}")
+            raise
+        except APIConnectionError as e:
+            logger.error(f"Erro de conexao ao gerar embeddings em lote: {e}")
+            raise
+        except OpenAIError as e:
+            logger.error(f"Erro OpenAI ao gerar embeddings em lote: {e}")
+            raise
         except Exception as e:
-            logger.error(f"Erro ao gerar embeddings em lote: {e}")
+            logger.error(f"Erro inesperado ao gerar embeddings em lote: {e}")
             raise
 
     async def chat_completion(
@@ -65,19 +65,6 @@ class OpenAIService:
         max_tokens: Optional[int] = None,
         response_format: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        """
-        Gera resposta do chat
-
-        Args:
-            messages: Lista de mensagens no formato OpenAI
-            model: Modelo a usar (default: settings.LLM_MODEL)
-            temperature: Temperatura (default: settings.TEMPERATURE)
-            max_tokens: Máximo de tokens (default: settings.MAX_TOKENS)
-            response_format: Formato da resposta (ex: {"type": "json_object"})
-
-        Returns:
-            Resposta completa da API
-        """
         try:
             params = {
                 "model": model or settings.LLM_MODEL,
@@ -103,10 +90,18 @@ class OpenAIService:
                 "model": response.model,
                 "finish_reason": response.choices[0].finish_reason,
             }
+        except APITimeoutError as e:
+            logger.error(f"Timeout na chamada do chat: {e}")
+            raise
+        except APIConnectionError as e:
+            logger.error(f"Erro de conexao na chamada do chat: {e}")
+            raise
+        except OpenAIError as e:
+            logger.error(f"Erro OpenAI na chamada do chat: {e}")
+            raise
         except Exception as e:
-            logger.error(f"Erro na chamada do chat: {e}")
+            logger.error(f"Erro inesperado na chamada do chat: {e}")
             raise
 
 
-# Instância global
 openai_service = OpenAIService()

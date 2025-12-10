@@ -56,8 +56,8 @@ class CompanyConfigDB(BaseModel):
 
     company_id: str
     config: CompanyConfig
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
     is_active: bool = True
 
     class Config:

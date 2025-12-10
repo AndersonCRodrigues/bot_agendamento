@@ -71,7 +71,7 @@ class CompanyService:
 
             result = await collection.update_one(
                 {"company_id": company_id},
-                {"$set": {"is_active": False, "updated_at": datetime.utcnow()}},
+                {"$set": {"is_active": False, "updated_at": datetime.now()}},
             )
 
             if result.matched_count > 0:

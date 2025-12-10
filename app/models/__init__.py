@@ -25,7 +25,8 @@ from .scheduling import (
     AvailabilitySearchParams,
     AppointmentConfirmation,
 )
-from .faq import FAQResponse
+from .knowledge import FAQResponse
+
 
 __all__ = [
     "AgentStatus",
