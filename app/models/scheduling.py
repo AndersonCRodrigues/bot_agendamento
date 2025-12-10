@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 
 class ServiceInfo(BaseModel):
@@ -47,7 +47,7 @@ class FilteredAgenda(BaseModel):
     service_name: Optional[str] = None
     price: Optional[float] = None
     duration: Optional[int] = None
-    options: List[Dict[str, any]] = Field(default_factory=list)
+    options: List[Dict[str, Any]] = Field(default_factory=list)
 
     class Config:
         json_schema_extra = {
