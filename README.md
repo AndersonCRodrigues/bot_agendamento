@@ -727,12 +727,8 @@ Sistema valida automaticamente:
 
 ### v2.2 (Próximo)
 - Suporte a múltiplos idiomas
-- Integração com calendários (Google, Outlook)
-- Webhooks para notificações em tempo real
-- Dashboard de analytics
 
 ### v2.3
-- Suporte a pagamentos no chat
 - Lembretes automáticos (SMS/Email)
 - Feedback pós-atendimento
 - A/B testing de prompts
@@ -740,8 +736,6 @@ Sistema valida automaticamente:
 ### v3.0
 - Multi-modal (voz + texto)
 - IA preditiva para otimização de horários
-- Integração com CRM externos
-- API GraphQL
 
 ---
 
