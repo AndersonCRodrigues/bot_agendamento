@@ -6,22 +6,15 @@ from ..models.scheduling import FullAgenda, FilteredAgenda
 
 
 class GraphState(TypedDict):
-    """
-    Estado otimizado do grafo.
-
-    IMPORTANTE:
-    - full_agenda NUNCA vai para o LLM (economiza ~8000 tokens)
-    - filtered_agenda é o que o LLM vê (apenas 50-200 tokens)
-    """
-
     company_id: str
     session_id: str
     user_message: str
 
     company_config: Dict[str, Any]
+    company_agenda: Dict[str, Any]
     customer_profile: Dict[str, Any]
 
-    full_agenda: FullAgenda
+    full_agenda: Optional[FullAgenda]
     filtered_agenda: Optional[FilteredAgenda]
 
     chat_history: List[Dict]

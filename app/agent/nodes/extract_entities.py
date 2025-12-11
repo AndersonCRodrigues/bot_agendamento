@@ -1,6 +1,6 @@
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Any, Optional
 from ..state import GraphState
 
@@ -8,19 +8,12 @@ logger = logging.getLogger(__name__)
 
 
 async def extract_entities_node(state: GraphState) -> GraphState:
-    """
-    Extrai entidades da mensagem do usuário SEM usar LLM.
-
-    Entidades extraídas:
-    - service_name: "limpeza de pele", "corte", etc
-    - professional_name: "Ana", "Dr. João", etc
-    - date_intent: "amanhã", "segunda", "dia 15"
-    - time_intent: "manhã", "tarde", "14h"
-
-    Economia: ~500 tokens por extração vs usar LLM
-    """
     try:
         logger.info("[EXTRACT] Extraindo entidades da mensagem")
+
+        if not state.get("full_agenda"):
+            logger.warning("[EXTRACT] Agenda não carregada, pulando extração")
+            return {**state, "extracted_entities": {}}
 
         message = state["user_message"].lower()
         entities: Dict[str, Any] = {}
@@ -43,7 +36,6 @@ async def extract_entities_node(state: GraphState) -> GraphState:
 
 
 def _extract_service_name(message: str, agenda) -> Optional[str]:
-    """Extrai nome do serviço por matching de palavras-chave"""
     for service_id, service_info in agenda.services.items():
         service_name = service_info.name.lower()
         service_words = service_name.split()
@@ -59,7 +51,6 @@ def _extract_service_name(message: str, agenda) -> Optional[str]:
 
 
 def _extract_professional_name(message: str, agenda) -> Optional[str]:
-    """Extrai nome do profissional"""
     for prof_id, prof_info in agenda.professionals.items():
         prof_name = prof_info.name.lower()
         first_name = prof_name.split()[0]
@@ -80,7 +71,6 @@ def _extract_professional_name(message: str, agenda) -> Optional[str]:
 
 
 def _extract_date_intent(message: str) -> Optional[str]:
-    """Extrai intenção de data relativa"""
     date_patterns = {
         "hoje": "today",
         "amanhã": "tomorrow",
@@ -105,7 +95,6 @@ def _extract_date_intent(message: str) -> Optional[str]:
 
 
 def _extract_specific_date(message: str) -> Optional[str]:
-    """Extrai data específica em formato DD/MM ou DD-MM ou YYYY-MM-DD"""
     patterns = [
         r"(\d{4})-(\d{2})-(\d{2})",
         r"(\d{2})[/-](\d{2})[/-](\d{4})",
@@ -141,7 +130,6 @@ def _extract_specific_date(message: str) -> Optional[str]:
 
 
 def _extract_time_preference(message: str) -> Optional[str]:
-    """Extrai preferência de horário"""
     if any(word in message for word in ["manhã", "cedo", "matinal"]):
         return "morning"
 

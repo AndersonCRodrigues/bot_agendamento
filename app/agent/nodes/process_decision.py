@@ -12,7 +12,9 @@ async def process_directives_node(state: GraphState) -> GraphState:
         directives_data = raw.get("directives", {"type": "normal"})
         directives_type = directives_data.get("type", "normal")
 
-        if directives_type == "appointment_confirmation":
+        if directives_type != "appointment_confirmation":
+            directives_data.pop("payload_appointment", None)
+        else:
             directives_data = _validate_and_enrich_appointment(directives_data, state)
             directives_type = directives_data.get("type", "normal")
 
@@ -42,104 +44,64 @@ async def process_directives_node(state: GraphState) -> GraphState:
             },
         )
 
-        logger.info(f"[PROCESS] Diretiva: {directives.type} | Kanban: {k_status}")
-
-        if directives_type == "appointment_confirmation":
-            logger.info(
-                f"[PROCESS] Agendamento confirmado: "
-                f"Prof={directives.payload_appointment.profissional_id}, "
-                f"Serv={directives.payload_appointment.servico_id}, "
-                f"Data={directives.payload_appointment.data}, "
-                f"Hora={directives.payload_appointment.hora}"
-            )
-
         return {**state, "final_response": final_response}
 
     except Exception as e:
-        logger.error(f"[PROCESS] Erro ao processar diretivas: {e}", exc_info=True)
-        return {**state, "error": str(e)}
+        logger.error(f"[PROCESS] Erro: {e}", exc_info=True)
+
+        fallback_response = ChatResponse(
+            cliente_id=state["session_id"],
+            company_id=state["company_id"],
+            response_text="Desculpe, tive um erro técnico. Pode repetir?",
+            kanban_status=KanbanStatus.EM_ATENDIMENTO,
+            directives=Directives(type="normal"),
+            metadata={"error": str(e)},
+        )
+        return {**state, "final_response": fallback_response, "error": str(e)}
 
 
 def _validate_and_enrich_appointment(directives_data: dict, state: GraphState) -> dict:
     payload = directives_data.get("payload_appointment", {})
 
-    if not payload:
-        logger.warning("[PROCESS] Appointment sem payload, revertendo para normal")
+    def revert_to_normal():
         directives_data["type"] = "normal"
+        directives_data.pop("payload_appointment", None)
         return directives_data
+
+    if not payload:
+        return revert_to_normal()
 
     profissional_id = payload.get("profissional_id")
     servico_id = payload.get("servico_id")
     data = payload.get("data")
     hora = payload.get("hora")
 
-    missing = []
-    if not profissional_id:
-        missing.append("profissional_id")
-    if not servico_id:
-        missing.append("servico_id")
-    if not data:
-        missing.append("data")
-    if not hora:
-        missing.append("hora")
-
-    if missing:
-        logger.error(
-            f"[PROCESS] Campos obrigatorios faltando: {missing}. "
-            f"Revertendo para normal. Payload: {payload}"
-        )
-        directives_data["type"] = "normal"
-        return directives_data
+    if not all([profissional_id, servico_id, data, hora]):
+        return revert_to_normal()
 
     full_agenda = state.get("full_agenda")
 
     if not full_agenda:
-        logger.error("[PROCESS] Agenda nao disponivel, revertendo para normal")
-        directives_data["type"] = "normal"
-        return directives_data
+        return revert_to_normal()
 
     prof_info = full_agenda.professionals.get(profissional_id)
     service_info = full_agenda.services.get(servico_id)
 
-    if not prof_info:
-        logger.error(
-            f"[PROCESS] Profissional ID {profissional_id} invalido. "
-            f"Revertendo para normal"
-        )
-        directives_data["type"] = "normal"
-        return directives_data
-
-    if not service_info:
-        logger.error(
-            f"[PROCESS] Servico ID {servico_id} invalido. " f"Revertendo para normal"
-        )
-        directives_data["type"] = "normal"
-        return directives_data
+    if not prof_info or not service_info:
+        return revert_to_normal()
 
     if servico_id not in prof_info.services:
-        logger.error(
-            f"[PROCESS] Servico {servico_id} nao oferecido por profissional {profissional_id}. "
-            f"Revertendo para normal"
-        )
-        directives_data["type"] = "normal"
-        return directives_data
+        return revert_to_normal()
 
     availability = full_agenda.availability.get(profissional_id, {}).get(servico_id, {})
     date_slots = availability.get(data, [])
 
     if hora not in date_slots:
-        logger.error(
-            f"[PROCESS] Horario {hora} nao disponivel para {profissional_id}/{servico_id} em {data}. "
-            f"Revertendo para normal"
-        )
-        directives_data["type"] = "normal"
-        return directives_data
+        return revert_to_normal()
 
     payload["profissional_name"] = prof_info.name
     payload["servico_name"] = service_info.name
 
     directives_data["payload_appointment"] = payload
-
-    logger.info("[PROCESS] Agendamento validado e enriquecido com sucesso")
 
     return directives_data

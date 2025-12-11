@@ -1,6 +1,7 @@
 import logging
 from ..state import GraphState
 from ...tools import intent_tool
+from ...models import IntentAnalysisResult, Intent
 
 logger = logging.getLogger(__name__)
 
@@ -8,7 +9,6 @@ logger = logging.getLogger(__name__)
 async def analyze_intent_node(state: GraphState) -> GraphState:
     """
     Nó 3: Análise de intenção de pagamento (TOOL 2)
-
     Executa SEMPRE - não é condicional
     Usa patterns + LLM para classificar intenção
     """
@@ -19,7 +19,8 @@ async def analyze_intent_node(state: GraphState) -> GraphState:
         result = await intent_tool.analyze(
             message=state["user_message"],
             recent_history=state["recent_history"],
-            customer_context=state["customer_context"],
+            # CORREÇÃO 1: Use 'customer_profile' que é a chave correta no GraphState
+            customer_context=state["customer_profile"],
         )
 
         logger.info(f"[INTENT] Resultado: {result.intent} - {result.reason}")
@@ -28,19 +29,17 @@ async def analyze_intent_node(state: GraphState) -> GraphState:
         return {
             **state,
             "intent_result": result,
-            "intent_analyzed": True,  # FLAG DE VALIDAÇÃO
+            "intent_analyzed": True,
             "tools_called": ["intent"],
         }
 
     except Exception as e:
         logger.error(f"[INTENT] Erro: {e}", exc_info=True)
-        # Fallback: intenção neutra
-        from ...models import IntentAnalysisResult, PaymentIntent
 
         return {
             **state,
             "intent_result": IntentAnalysisResult(
-                intent=PaymentIntent.NEUTRA, reason="Erro na análise"
+                intent=Intent.INFO, reason="Erro na análise (fallback)"
             ),
             "intent_analyzed": True,
             "tools_called": ["intent"],
