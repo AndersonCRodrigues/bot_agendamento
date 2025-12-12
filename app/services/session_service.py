@@ -13,12 +13,7 @@ class SessionService:
 
     def _convert_dates_to_datetime(self, obj: Any) -> Any:
         if isinstance(obj, date) and not isinstance(obj, datetime):
-            converted = datetime.combine(obj, datetime.min.time())
-            logger.warning(
-                f"Convertendo date para datetime: {obj} -> {converted}. "
-                f"Considere enviar datetime diretamente."
-            )
-            return converted
+            return datetime.combine(obj, datetime.min.time())
         elif isinstance(obj, dict):
             return {
                 key: self._convert_dates_to_datetime(value)
@@ -41,7 +36,6 @@ class SessionService:
             session = await collection.find_one({"session_id": session_id})
 
             if session:
-                logger.debug(f"Sessao existente recuperada: {session_id}")
                 await collection.update_one(
                     {"session_id": session_id},
                     {
@@ -63,8 +57,6 @@ class SessionService:
             new_session = self._convert_dates_to_datetime(new_session)
 
             await collection.insert_one(new_session)
-            logger.info(f"Nova sessao criada: {session_id}")
-
             return new_session
 
         except Exception as e:
@@ -86,9 +78,6 @@ class SessionService:
                     "$inc": {"summary.total_interactions": 1},
                 },
             )
-
-            logger.debug(f"Mensagens adicionadas a sessao {session_id}")
-
         except Exception as e:
             logger.error(f"Erro ao adicionar mensagens: {e}", exc_info=True)
             raise
@@ -148,8 +137,6 @@ class SessionService:
 
             await collection.update_one({"session_id": session_id}, update_ops)
 
-            logger.debug(f"Summary atualizado para sessao {session_id}")
-
         except Exception as e:
             logger.error(f"Erro ao atualizar summary: {e}", exc_info=True)
 
@@ -177,7 +164,6 @@ class SessionService:
             result = await collection.delete_one({"session_id": session_id})
 
             if result.deleted_count > 0:
-                logger.info(f"Sessao deletada: {session_id}")
                 return True
 
             return False
@@ -191,12 +177,31 @@ class SessionService:
             db = mongodb.get_database()
             collection = db[self.collection_name]
 
-            session = await collection.find_one({"session_id": session_id})
-            return session
-
+            return await collection.find_one({"session_id": session_id})
         except Exception as e:
             logger.error(f"Erro ao buscar sessao: {e}", exc_info=True)
             return None
+
+    async def update_pause_state(
+        self, session_id: str, paused_until: Optional[datetime], last_sender_type: str
+    ):
+        try:
+            db = mongodb.get_database()
+            collection = db[self.collection_name]
+
+            await collection.update_one(
+                {"session_id": session_id},
+                {
+                    "$set": {
+                        "paused_until": paused_until,
+                        "last_sender_type": last_sender_type,
+                        "updated_at": datetime.now(),
+                    }
+                },
+            )
+        except Exception as e:
+            logger.error(f"Erro ao atualizar estado de pausa: {e}", exc_info=True)
+            raise
 
 
 session_service = SessionService()
