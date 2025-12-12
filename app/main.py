@@ -1,15 +1,19 @@
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import logging
+from datetime import datetime, timedelta
 from openai import OpenAIError
 from bson import ObjectId
 from bson.errors import InvalidId
+from arq import create_pool
+from arq.connections import RedisSettings
 
 from .config import settings
 from .database import mongodb
 from .agent import create_agent_graph, GraphState
-from .models import ChatRequest, ChatResponse, CustomerProfile, CompanyConfig, CostInfo
+from .models import ChatRequest, CustomerProfile, CompanyConfig, CostInfo
 from .models.knowledge import (
     KnowledgeEntryCreate,
     KnowledgeEntryUpdate,
@@ -21,6 +25,7 @@ from .services.usage_service import usage_service
 from .services.company_service import company_service
 from .services.session_service import session_service
 from .services.rag_service import rag_service
+from .schemas import ChatSession
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL),
@@ -33,9 +38,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Iniciando Bot Agendador Multi-Nicho v2.1 (OTIMIZADO)")
     await mongodb.connect()
+    app.state.redis = await create_pool(RedisSettings(host="localhost", port=6379))
     logger.info("Sistema pronto")
     yield
     logger.info("Encerrando")
+    await app.state.redis.close()
     await mongodb.close()
 
 
@@ -55,13 +62,46 @@ app.add_middleware(
 )
 
 
-@app.post("/chat", response_model=ChatResponse, tags=["Chat"])
+@app.post("/chat", tags=["Chat"])
 async def chat_endpoint(request: ChatRequest):
     try:
         logger.info(
             f"[CHAT] Nova interacao. Sessao: {request.session_id} | "
             f"Empresa: {request.company.nome}"
         )
+
+        session = await session_service.get_session(request.session_id)
+
+        if (
+            session
+            and session.get("paused_until")
+            and session["paused_until"] > datetime.now()
+        ):
+            logger.info(
+                f"[CHAT] Sessão em pausa até {session['paused_until']}. Enfileirando."
+            )
+
+            user_message = ChatSession.create_message("user", request.cliente.mensagem)
+            await session_service.append_messages(request.session_id, [user_message])
+            await session_service.update_pause_state(
+                request.session_id, session["paused_until"], "user"
+            )
+
+            await app.state.redis.enqueue_job(
+                "delayed_response_task",
+                session_id=request.session_id,
+                user_message=request.cliente.mensagem,
+                company_payload=request.company.model_dump(),
+                _defer_until=session["paused_until"],
+            )
+
+            return JSONResponse(
+                status_code=202,
+                content={
+                    "status": "queued",
+                    "detail": "Bot em pausa, resposta agendada.",
+                },
+            )
 
         if request.company.config_override:
             company_config = request.company.config_override.model_dump()
@@ -123,11 +163,6 @@ async def chat_endpoint(request: ChatRequest):
             output_tokens=final_state.get("completion_tokens", 0),
         )
 
-        logger.info(
-            f"[CHAT] Sucesso. Tokens: {total_tokens} | "
-            f"Diretiva: {response.directives.type}"
-        )
-
         return response
 
     except HTTPException:
@@ -144,6 +179,30 @@ async def chat_endpoint(request: ChatRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Erro interno do servidor",
         )
+
+
+@app.post("/sessions/{session_id}/owner-interaction", tags=["Sessions"])
+async def owner_interaction(session_id: str, message: str):
+    try:
+        paused_until = datetime.now() + timedelta(minutes=10)
+
+        owner_msg = ChatSession.create_message(
+            "assistant", message, metadata={"source": "owner"}
+        )
+
+        await session_service.append_messages(session_id, [owner_msg])
+        await session_service.update_pause_state(
+            session_id=session_id, paused_until=paused_until, last_sender_type="owner"
+        )
+
+        return {
+            "status": "paused",
+            "paused_until": paused_until.isoformat(),
+            "detail": "Bot pausado por 10 minutos.",
+        }
+    except Exception as e:
+        logger.error(f"Erro owner interaction: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.post("/companies/{company_id}/config", tags=["Companies"])
@@ -203,10 +262,6 @@ async def create_knowledge_entry(
         if not company_id or len(company_id.strip()) == 0:
             raise HTTPException(status_code=400, detail="company_id é obrigatório")
 
-        logger.info(
-            f"[KNOWLEDGE] Criando FAQ para {company_id}: " f"'{entry.question[:50]}...'"
-        )
-
         entry_id = await rag_service.create_knowledge(
             company_id=company_id,
             question=entry.question,
@@ -214,8 +269,6 @@ async def create_knowledge_entry(
             category=entry.category,
             priority=entry.priority,
         )
-
-        logger.info(f"[KNOWLEDGE] FAQ criada: {entry_id}")
 
         return {
             "status": "success",
@@ -249,21 +302,11 @@ async def list_knowledge_entries(
         if limit > 100:
             raise HTTPException(status_code=400, detail="Limite máximo é 100 registros")
 
-        logger.info(
-            f"[KNOWLEDGE] Listando FAQs: company={company_id}, "
-            f"category={category}, skip={skip}, limit={limit}"
-        )
-
         result = await rag_service.list_knowledge(
             company_id=company_id,
             category=category,
             skip=skip,
             limit=limit,
-        )
-
-        logger.info(
-            f"[KNOWLEDGE] Encontradas {result['total']} FAQs "
-            f"(retornando {len(result['entries'])})"
         )
 
         return KnowledgeListResponse(**result)
@@ -292,10 +335,6 @@ async def update_knowledge_entry(
         if not company_id or len(company_id.strip()) == 0:
             raise HTTPException(status_code=400, detail="company_id é obrigatório")
 
-        logger.info(
-            f"[KNOWLEDGE] Atualizando FAQ {entry_id} " f"(company: {company_id})"
-        )
-
         updated = await rag_service.update_knowledge(
             entry_id=entry_id,
             company_id=company_id,
@@ -306,17 +345,11 @@ async def update_knowledge_entry(
         )
 
         if not updated:
-            logger.warning(f"[KNOWLEDGE] FAQ não encontrada: {entry_id}")
             raise HTTPException(
                 status_code=404, detail=f"FAQ {entry_id} não encontrada"
             )
 
         regenerated = bool(entry.question or entry.answer or entry.category)
-
-        logger.info(
-            f"[KNOWLEDGE] FAQ atualizada: {entry_id} "
-            f"(embedding regenerado: {regenerated})"
-        )
 
         return {
             "status": "success",
@@ -350,20 +383,15 @@ async def delete_knowledge_entry(
         if not company_id or len(company_id.strip()) == 0:
             raise HTTPException(status_code=400, detail="company_id é obrigatório")
 
-        logger.info(f"[KNOWLEDGE] Deletando FAQ {entry_id} " f"(company: {company_id})")
-
         deleted = await rag_service.delete_knowledge(
             entry_id=entry_id,
             company_id=company_id,
         )
 
         if not deleted:
-            logger.warning(f"[KNOWLEDGE] FAQ não encontrada: {entry_id}")
             raise HTTPException(
                 status_code=404, detail=f"FAQ {entry_id} não encontrada"
             )
-
-        logger.info(f"[KNOWLEDGE] FAQ deletada (soft): {entry_id}")
 
         return {
             "status": "success",
@@ -400,11 +428,6 @@ async def bulk_create_knowledge(
                 status_code=400, detail="Máximo de 100 FAQs por request"
             )
 
-        logger.info(
-            f"[KNOWLEDGE] Bulk create: {len(bulk_data.entries)} FAQs "
-            f"para {bulk_data.company_id}"
-        )
-
         entries_dict = [
             {
                 "question": e.question,
@@ -419,8 +442,6 @@ async def bulk_create_knowledge(
             company_id=bulk_data.company_id,
             entries=entries_dict,
         )
-
-        logger.info(f"[KNOWLEDGE] Bulk create concluído: {len(ids)} FAQs criadas")
 
         return KnowledgeBulkResponse(
             status="success",
@@ -480,12 +501,9 @@ async def get_company_ranking(period: str = "monthly", limit: int = 10):
 @app.get("/sessions/{session_id}", tags=["Sessions"])
 async def get_session(session_id: str):
     try:
-        logger.info(f"[SESSIONS] Buscando sessao: {session_id}")
-
         session = await session_service.get_session(session_id)
 
         if not session:
-            logger.warning(f"[SESSIONS] Sessao nao encontrada: {session_id}")
             raise HTTPException(
                 status_code=404, detail=f"Sessao {session_id} nao encontrada"
             )
@@ -493,7 +511,6 @@ async def get_session(session_id: str):
         if "_id" in session:
             session["_id"] = str(session["_id"])
 
-        logger.info(f"[SESSIONS] Sessao encontrada: {session_id}")
         return session
 
     except HTTPException:
@@ -506,19 +523,13 @@ async def get_session(session_id: str):
 @app.delete("/sessions/{session_id}", tags=["Sessions"])
 async def delete_session(session_id: str):
     try:
-        logger.info(f"[SESSIONS] Deletando sessao: {session_id}")
-
         deleted = await session_service.delete_session(session_id)
 
         if not deleted:
-            logger.warning(
-                f"[SESSIONS] Sessao nao encontrada para deletar: {session_id}"
-            )
             raise HTTPException(
                 status_code=404, detail=f"Sessao {session_id} nao encontrada"
             )
 
-        logger.info(f"[SESSIONS] Sessao deletada com sucesso: {session_id}")
         return {"status": "success", "session_id": session_id}
 
     except HTTPException:
