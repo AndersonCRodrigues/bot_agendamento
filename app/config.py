@@ -8,8 +8,11 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: str
 
-    REDIS_URL: Optional[str] = None
-    USE_REDIS: bool = False
+    REDIS_URL: Optional[str] = "redis://localhost:6379"
+    USE_REDIS: bool = True
+
+    MAIN_BACKEND_WEBHOOK_URL: str
+    WEBHOOK_SECRET_TOKEN: str
 
     ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "INFO"
