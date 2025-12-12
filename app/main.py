@@ -10,6 +10,7 @@ from .agent import create_agent_graph, GraphState
 from .models import ChatRequest, ChatResponse, CustomerProfile, CompanyConfig, CostInfo
 from .services.usage_service import usage_service
 from .services.company_service import company_service
+from .services.session_service import session_service
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL),
@@ -220,6 +221,59 @@ async def get_company_ranking(period: str = "monthly", limit: int = 10):
     except Exception as e:
         logger.error(f"Erro ranking: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Erro ao buscar ranking")
+
+
+@app.get("/sessions/{session_id}", tags=["Sessions"])
+async def get_session(session_id: str):
+    try:
+        logger.info(f"[SESSIONS] Buscando sessao: {session_id}")
+
+        session = await session_service.get_session(session_id)
+
+        if not session:
+            logger.warning(f"[SESSIONS] Sessao nao encontrada: {session_id}")
+            raise HTTPException(
+                status_code=404, detail=f"Sessao {session_id} nao encontrada"
+            )
+
+        from bson import ObjectId
+
+        if "_id" in session:
+            session["_id"] = str(session["_id"])
+
+        logger.info(f"[SESSIONS] Sessao encontrada: {session_id}")
+        return session
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[SESSIONS] Erro ao buscar sessao: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar sessao: {str(e)}")
+
+
+@app.delete("/sessions/{session_id}", tags=["Sessions"])
+async def delete_session(session_id: str):
+    try:
+        logger.info(f"[SESSIONS] Deletando sessao: {session_id}")
+
+        deleted = await session_service.delete_session(session_id)
+
+        if not deleted:
+            logger.warning(
+                f"[SESSIONS] Sessao nao encontrada para deletar: {session_id}"
+            )
+            raise HTTPException(
+                status_code=404, detail=f"Sessao {session_id} nao encontrada"
+            )
+
+        logger.info(f"[SESSIONS] Sessao deletada com sucesso: {session_id}")
+        return {"status": "success", "session_id": session_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[SESSIONS] Erro ao deletar sessao: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao deletar sessao: {str(e)}")
 
 
 @app.get("/health", tags=["System"])

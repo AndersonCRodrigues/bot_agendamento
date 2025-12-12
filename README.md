@@ -4,15 +4,16 @@ Sistema de agendamento conversacional baseado em LangGraph com arquitetura otimi
 
 ## Visão Geral
 
-O sistema opera como uma Máquina de Estados Finitos (FSM) que converte leads em agendamentos confirmados através de conversação natural, respeitando regras de negócio rígidas e adaptando comportamento através de 15 dimensões configuráveis por empresa.
+O sistema opera como uma Máquina de Estados Finitos (FSM) que converte leads em agendamentos confirmados através de conversação natural, respeitando regras de negócio rígidas e adaptando comportamento através de 6 dimensões configuráveis por empresa.
 
 ### Principais Características
 
 - **Economia de 95-97% em tokens** através de filtragem inteligente de agenda
 - **Arquitetura Zero-Write** - backend recebe apenas diretivas estruturadas
-- **Personalização profunda** - 15 dimensões de configuração por tenant
+- **Personalização simplificada** - 6 dimensões de configuração essenciais
 - **Garantias de integridade** - validação automática de dados cadastrais
 - **Multi-nicho** - adaptável para saúde, estética, jurídico, serviços gerais
+- **Multi-idioma** - suporte nativo para Português (BR), Inglês (US) e Espanhol (LA)
 - **Tracking completo** - métricas detalhadas por empresa, dia, semana, mês, ano
 - **RAG (Retrieval Augmented Generation)** - knowledge base vetorial por empresa
 
@@ -29,7 +30,7 @@ FILTER_AVAILABILITY → VALIDATE → RESPOND → PROCESS → SAVE
 
 #### Nós do Grafo
 
-1. **LOAD_CONTEXT**: Carrega agenda completa + histórico + RAG no state (não enviado ao LLM)
+1. **LOAD_CONTEXT**: Carrega agenda completa + histórico + RAG no state
 2. **CHECK_INTEGRITY**: Valida completude de cadastro (nome + email)
 3. **SENTIMENT**: Análise de sentimento (8 categorias)
 4. **INTENT**: Análise de intenção (5 categorias)
@@ -82,11 +83,9 @@ git clone <repository-url>
 cd bot-agendamento
 
 cp .env.example .env
-# Edite .env com suas credenciais
 
 python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# venv\Scripts\activate   # Windows
+source venv/bin/activate
 
 pip install -r requirements.txt
 ```
@@ -140,8 +139,6 @@ No MongoDB Atlas UI:
 6. Selecione a collection: `company_knowledge_base`
 7. Clique em `Create Search Index`
 
-**Nota**: O índice pode levar alguns minutos para ser construído.
-
 #### 3. Configurar .env
 
 ```bash
@@ -178,7 +175,230 @@ Documentação interativa: `http://localhost:8000/docs`
 
 ---
 
-## 📡 API Reference - Endpoints Completos
+## Personalização por Empresa
+
+### 6 Dimensões Configuráveis
+
+A configuração de cada empresa é simplificada e focada no essencial:
+
+```json
+{
+  "nicho_mercado": "Clínica Médica",
+  "tom_voz": "Profissional",
+  "idioma": "pt-BR",
+  "uso_emojis": true,
+  "frequencia_cta": "normal",
+  "estilo_despedida": "Até logo!"
+}
+```
+
+#### 1. Nicho de Mercado (`nicho_mercado`)
+- **Tipo**: String livre
+- **Obrigatório**: ✅ Sim (único campo sem padrão)
+- **Exemplos**:
+  - "Clínica Médica"
+  - "Barbearia Premium"
+  - "Estética Avançada"
+  - "Consultório Odontológico"
+  - "Escritório de Advocacia"
+- **Impacto**: Contextualiza todo o prompt com vocabulário e tom específicos do setor
+
+#### 2. Tom de Voz (`tom_voz`)
+- **Tipo**: Enum fixo
+- **Valores permitidos**:
+  - `"Profissional"` - Formal, direto, sem intimidades (padrão)
+  - `"Amigável"` - Cordial, próximo, acolhedor
+  - `"Formal"` - Extremamente respeitoso, protocolado
+  - `"Entusiasta"` - Animado, energético, motivador
+- **Padrão**: `"Profissional"`
+- **Exemplo de diferença**:
+  - Profissional: "Olá! Posso agendar quinta às 14h ou sexta às 10h?"
+  - Amigável: "Oi! Que tal quinta às 14h ou sexta às 10h? 😊"
+  - Formal: "Prezado(a), disponibilizamos quinta-feira às 14h ou sexta-feira às 10h."
+  - Entusiasta: "Ótimo! Tenho horários incríveis: quinta 14h ou sexta 10h!"
+
+#### 3. Idioma (`idioma`)
+- **Tipo**: Enum fixo
+- **Valores permitidos**:
+  - `"pt-BR"` - Português do Brasil (padrão)
+  - `"en-US"` - English (United States)
+  - `"es-LA"` - Español (Latinoamérica)
+- **Padrão**: `"pt-BR"`
+- **Impacto completo**:
+  - System prompt traduzido nativamente
+  - Mensagens de erro e validações
+  - Formatação de datas e horários
+  - Formatação de moeda
+  - Validações de regex (nomes, emails)
+
+**Exemplo de diferenças:**
+
+| Aspecto | pt-BR | en-US | es-LA |
+|---------|-------|-------|-------|
+| Data | 10/12/2025 | 12/10/2025 | 10/12/2025 |
+| Hora | 14h | 2 PM | 14h |
+| Moeda | R$ 180,00 | $180.00 | $180.00 |
+| Confirmação | "Confirmo" | "Confirm" | "Confirmo" |
+
+#### 4. Uso de Emojis (`uso_emojis`)
+- **Tipo**: Boolean
+- **Valores**:
+  - `true` - Usa emojis moderadamente (máx 1 por resposta)
+  - `false` - Nunca usa emojis
+- **Padrão**: `true`
+- **Recomendação**:
+  - `true` para nichos informais (barbearia, estética)
+  - `false` para nichos formais (jurídico, médico)
+
+#### 5. Frequência de CTA (`frequencia_cta`)
+- **Tipo**: Enum fixo
+- **Valores**:
+  - `"minima"` - 1 CTA a cada 3-4 mensagens (conversação mais natural)
+  - `"normal"` - 1 CTA a cada 2 mensagens (padrão, equilibrado)
+  - `"maxima"` - 1 CTA em toda mensagem (vendas agressivas)
+- **Padrão**: `"normal"`
+- **CTA = Call To Action** (ex: "Confirma qual?", "Posso agendar?")
+
+**Exemplo de diferença:**
+```
+[minima]
+Bot: Tenho quinta às 14h ou sexta às 10h.
+Cliente: Hum, deixa eu ver...
+Bot: Sem pressa! Dá uma olhada e me avisa.
+
+[normal - PADRÃO]
+Bot: Tenho quinta às 14h ou sexta às 10h. Qual prefere?
+Cliente: Hum, deixa eu ver...
+Bot: Claro! Quando decidir, é só me avisar. Confirma qual?
+
+[maxima]
+Bot: Tenho quinta às 14h ou sexta às 10h. Confirma qual?
+Cliente: Hum, deixa eu ver...
+Bot: Quinta ou sexta? Qual você prefere agendar agora?
+```
+
+#### 6. Estilo de Despedida (`estilo_despedida`)
+- **Tipo**: String livre
+- **Padrão**: `"padrão"`
+- **Exemplos personalizados**:
+  - Informal: "Até logo! 👋"
+  - Formal: "Atenciosamente, Equipe [Nome]"
+  - Regional: "Tchau, tchau!"
+  - Profissional saúde: "Cuide-se bem!"
+  - Fitness: "Bons treinos!"
+
+---
+
+### Configurações Fixas (Não Personalizáveis)
+
+Para garantir qualidade e consistência, estas configurações são **hard-coded** no sistema:
+
+#### 1. **Confidencialidade: Sempre Ativa**
+- Disclaimer automático de privacidade (LGPD/GDPR)
+- Adaptado ao idioma configurado:
+  - 🇧🇷 "Suas informações são confidenciais e protegidas pela LGPD."
+  - 🇺🇸 "Your information is confidential and protected by privacy laws."
+  - 🇪🇸 "Su información es confidencial y protegida por las leyes de privacidad."
+
+#### 2. **Nível de Empatia: Sempre Alto**
+- O bot sempre demonstra empatia e compreensão
+- Reconhece frustração do cliente
+- Oferece alternativas antes de negar
+- Não pode ser configurado como "baixo" ou "médio"
+
+#### 3. **Extensão de Respostas: Sempre Concisa**
+- Máximo de 2-3 frases por resposta
+- Objetivo e direto ao ponto
+- Evita explicações longas não solicitadas
+
+#### 4. **Estilo de Persuasão: Sempre Suave**
+- Nunca usa técnicas de pressão
+- Não cria senso de urgência artificial
+- Não usa frases como "última vaga", "só hoje"
+
+#### 5. **Reação a Erros: Sempre Educada**
+- Nunca culpa o cliente por input incorreto
+- Oferece ajuda de forma construtiva
+- Reformula a pergunta para facilitar
+
+#### 6. **Tratamento: Sempre "Você"**
+- Usa "você" em português
+- Usa "you" em inglês
+- Usa "tú/usted" em espanhol (adaptado ao tom)
+- Não usa "Sr(a)", "V.Sa.", "tu"
+
+#### 7. **Gírias: Sempre Desativadas**
+- Linguagem clara e profissional
+- Evita regionalismo excessivo
+- Mantém compreensão universal
+
+---
+
+### Exemplos de Configuração por Nicho
+
+#### Clínica Médica
+```json
+{
+  "nicho_mercado": "Clínica Médica",
+  "tom_voz": "Formal",
+  "idioma": "pt-BR",
+  "uso_emojis": false,
+  "frequencia_cta": "minima",
+  "estilo_despedida": "Cuide-se bem!"
+}
+```
+
+#### Barbearia Moderna
+```json
+{
+  "nicho_mercado": "Barbearia Premium",
+  "tom_voz": "Amigável",
+  "idioma": "pt-BR",
+  "uso_emojis": true,
+  "frequencia_cta": "normal",
+  "estilo_despedida": "Até a próxima, parça! ✂️"
+}
+```
+
+#### Escritório de Advocacia
+```json
+{
+  "nicho_mercado": "Escritório de Advocacia",
+  "tom_voz": "Formal",
+  "idioma": "pt-BR",
+  "uso_emojis": false,
+  "frequencia_cta": "minima",
+  "estilo_despedida": "Atenciosamente, Dr. Silva & Associados"
+}
+```
+
+#### Spa Internacional
+```json
+{
+  "nicho_mercado": "Luxury Spa & Wellness",
+  "tom_voz": "Profissional",
+  "idioma": "en-US",
+  "uso_emojis": true,
+  "frequencia_cta": "normal",
+  "estilo_despedida": "Relax and rejuvenate! 🧘"
+}
+```
+
+#### Clínica de Estética Latina
+```json
+{
+  "nicho_mercado": "Clínica de Estética",
+  "tom_voz": "Entusiasta",
+  "idioma": "es-LA",
+  "uso_emojis": true,
+  "frequencia_cta": "maxima",
+  "estilo_despedida": "¡Hasta pronto, bella! 💆"
+}
+```
+
+---
+
+## 📡 API Reference - Endpoints Principais
 
 ### **1. Chat - Conversação Principal**
 
@@ -201,11 +421,6 @@ Endpoint principal de conversação com o bot de agendamento.
           "id": "A1",
           "name": "Ana Ribeiro",
           "services": ["S1", "S2"]
-        },
-        "A2": {
-          "id": "A2",
-          "name": "Maria Santos",
-          "services": ["S1", "S3"]
         }
       },
       "services": {
@@ -214,27 +429,12 @@ Endpoint principal de conversação com o bot de agendamento.
           "name": "Limpeza de Pele",
           "duration": 60,
           "price": 180
-        },
-        "S2": {
-          "id": "S2",
-          "name": "Peeling Facial",
-          "duration": 60,
-          "price": 220
         }
       },
       "availability": {
         "A1": {
           "S1": {
-            "2025-12-10": ["08:00", "09:00", "10:00"],
-            "2025-12-11": ["13:00", "14:00", "15:00"]
-          },
-          "S2": {
-            "2025-12-10": ["11:00", "12:00"]
-          }
-        },
-        "A2": {
-          "S1": {
-            "2025-12-10": ["08:00", "09:00", "10:00", "11:00"]
+            "2025-12-10": ["08:00", "09:00", "10:00"]
           }
         }
       }
@@ -249,7 +449,7 @@ Endpoint principal de conversação com o bot de agendamento.
 }
 ```
 
-**Response - Sucesso (200):**
+**Response:**
 
 ```json
 {
@@ -282,536 +482,6 @@ Endpoint principal de conversação com o bot de agendamento.
 }
 ```
 
-**Tipos de Diretivas:**
-
-| Tipo | Quando Usar | Campos Obrigatórios |
-|------|-------------|---------------------|
-| `normal` | Conversação em andamento | - |
-| `update_user` | Cliente forneceu dados cadastrais | `payload_update` |
-| `appointment_confirmation` | Cliente confirmou agendamento | `payload_appointment` com todos os 4 campos |
-
----
-
-### 📋 Exemplos Detalhados por Tipo de Diretiva
-
-#### **Diretiva 1: `normal` - Conversação em Andamento**
-
-**Quando usar:**
-- Cliente fazendo perguntas
-- Negociação de horários
-- Dúvidas sobre serviços
-- Primeira interação sem cadastro
-- Cancelamento solicitado
-- Handoff para humano
-
-**Exemplo 1: Cliente pergunta sobre preço**
-
-```json
-{
-  "cliente": {
-    "telefone": "5521999887766",
-    "mensagem": "Quanto custa a limpeza de pele?"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "cliente_id": "5521999887766",
-  "company_id": "clinica_abc",
-  "response_text": "A Limpeza de Pele custa R$ 180,00 e tem duração de 60 minutos. Quer agendar?",
-  "kanban_status": "Dúvida/Info",
-  "directives": {
-    "type": "normal",
-    "payload_update": null,
-    "payload_appointment": null
-  },
-  "metadata": {
-    "intent": "INFO",
-    "sentiment": "neutro"
-  }
-}
-```
-
-**Exemplo 2: Cliente quer cancelar (primeira menção)**
-
-```json
-{
-  "cliente": {
-    "telefone": "5521999887766",
-    "nome": "João Silva",
-    "email": "joao@email.com",
-    "mensagem": "Quero cancelar meu agendamento"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "response_text": "Entendo. Que tal reagendar? Tenho disponível terça às 14h ou quinta às 10h.",
-  "kanban_status": "Em Atendimento",
-  "directives": {
-    "type": "normal",
-    "payload_update": null,
-    "payload_appointment": null
-  },
-  "metadata": {
-    "intent": "CANCELLATION",
-    "sentiment": "neutro"
-  }
-}
-```
-
-**Exemplo 3: Cliente pede atendimento humano**
-
-```json
-{
-  "cliente": {
-    "mensagem": "Quero falar com um atendente"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "response_text": "Claro! Vou encaminhar você para atendimento humano. Aguarde um momento.",
-  "kanban_status": "Handoff Humano",
-  "directives": {
-    "type": "normal",
-    "payload_update": null,
-    "payload_appointment": null
-  },
-  "metadata": {
-    "intent": "HUMAN_HANDOFF",
-    "sentiment": "neutro"
-  }
-}
-```
-
----
-
-#### **Diretiva 2: `update_user` - Atualização de Cadastro**
-
-**Quando usar:**
-- Cliente fornece nome completo (mínimo 2 palavras)
-- Cliente fornece email válido (com @)
-- Cliente corrige telefone
-- Cliente atualiza qualquer dado pessoal
-
-**⚠️ IMPORTANTE:** Preencha apenas os campos que o cliente mencionou. Deixe os outros como `null`.
-
-**Exemplo 1: Cliente fornece apenas nome**
-
-```json
-{
-  "cliente": {
-    "telefone": "5521999887766",
-    "mensagem": "Meu nome é João Silva"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "response_text": "Obrigado João! Agora preciso do seu email para confirmar o cadastro.",
-  "kanban_status": "Em Atendimento",
-  "directives": {
-    "type": "update_user",
-    "payload_update": {
-      "nome": "João Silva",
-      "email": null,
-      "telefone": null
-    },
-    "payload_appointment": null
-  },
-  "metadata": {
-    "intent": "INFO",
-    "sentiment": "positivo"
-  }
-}
-```
-
-**Exemplo 2: Cliente fornece apenas email**
-
-```json
-{
-  "cliente": {
-    "telefone": "5521999887766",
-    "nome": null,
-    "mensagem": "joao.silva@email.com"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "response_text": "Email registrado! Preciso também do seu nome completo para finalizar o cadastro.",
-  "kanban_status": "Em Atendimento",
-  "directives": {
-    "type": "update_user",
-    "payload_update": {
-      "nome": null,
-      "email": "joao.silva@email.com",
-      "telefone": null
-    },
-    "payload_appointment": null
-  },
-  "metadata": {
-    "intent": "INFO",
-    "sentiment": "neutro"
-  }
-}
-```
-
-**Exemplo 3: Cliente fornece nome E email na mesma mensagem**
-
-```json
-{
-  "cliente": {
-    "telefone": "5521999887766",
-    "mensagem": "João Silva, joao@email.com"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "response_text": "Perfeito João! Cadastro completo. Qual serviço você deseja agendar?",
-  "kanban_status": "Em Atendimento",
-  "directives": {
-    "type": "update_user",
-    "payload_update": {
-      "nome": "João Silva",
-      "email": "joao@email.com",
-      "telefone": null
-    },
-    "payload_appointment": null
-  },
-  "metadata": {
-    "intent": "INFO",
-    "sentiment": "positivo"
-  }
-}
-```
-
-**Exemplo 4: Cliente corrige telefone**
-
-```json
-{
-  "cliente": {
-    "telefone": "5521999887766",
-    "nome": "João Silva",
-    "email": "joao@email.com",
-    "mensagem": "Meu telefone correto é 5521988776655"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "response_text": "Telefone atualizado para 5521988776655. Posso te ajudar com mais alguma coisa?",
-  "kanban_status": "Em Atendimento",
-  "directives": {
-    "type": "update_user",
-    "payload_update": {
-      "nome": null,
-      "email": null,
-      "telefone": "5521988776655"
-    },
-    "payload_appointment": null
-  },
-  "metadata": {
-    "intent": "INFO",
-    "sentiment": "neutro"
-  }
-}
-```
-
----
-
-#### **Diretiva 3: `appointment_confirmation` - Agendamento Confirmado**
-
-**Quando usar:**
-- Cliente confirmou TODOS os 4 elementos: profissional, serviço, data e hora
-- Cliente usou palavras de confirmação: "confirmo", "pode ser", "fechado", "topo", "marque"
-- Cliente repetiu data + hora + profissional explicitamente
-
-**⚠️ CRÍTICO:** Todos os 4 campos são obrigatórios:
-- `profissional_id` (ex: "A1", "A2")
-- `servico_id` (ex: "S1", "S2")
-- `data` (formato: YYYY-MM-DD)
-- `hora` (formato: HH:MM)
-
-Se faltar qualquer um desses campos, use `type: "normal"` ao invés de `appointment_confirmation`.
-
-**Exemplo 1: Cliente confirma opção oferecida**
-
-```json
-{
-  "cliente": {
-    "telefone": "5521999887766",
-    "nome": "João Silva",
-    "email": "joao@email.com",
-    "mensagem": "Confirmo quinta às 9h com a Ana"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "response_text": "Agendado! Limpeza de Pele com Ana Ribeiro, quinta-feira 10/12/2025 às 9h. Duração: 60min. Valor: R$ 180,00. Até lá!",
-  "kanban_status": "Agendado",
-  "directives": {
-    "type": "appointment_confirmation",
-    "payload_update": null,
-    "payload_appointment": {
-      "profissional_id": "A1",
-      "profissional_name": "Ana Ribeiro",
-      "servico_id": "S1",
-      "servico_name": "Limpeza de Pele",
-      "data": "2025-12-10",
-      "hora": "09:00"
-    }
-  },
-  "cost_info": {
-    "total_tokens": 512,
-    "input_tokens": 435,
-    "output_tokens": 77
-  },
-  "metadata": {
-    "intent": "SCHEDULING",
-    "sentiment": "positivo"
-  }
-}
-```
-
-**Exemplo 2: Cliente usa palavra-chave "pode ser"**
-
-```json
-{
-  "cliente": {
-    "nome": "Maria Santos",
-    "email": "maria@email.com",
-    "mensagem": "Pode ser sexta às 14h"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "response_text": "Confirmado! Peeling Facial com Maria Santos, sexta-feira 11/12/2025 às 14h. Duração: 60min. Valor: R$ 220,00.",
-  "kanban_status": "Agendado",
-  "directives": {
-    "type": "appointment_confirmation",
-    "payload_update": null,
-    "payload_appointment": {
-      "profissional_id": "A2",
-      "profissional_name": "Maria Santos",
-      "servico_id": "S2",
-      "servico_name": "Peeling Facial",
-      "data": "2025-12-11",
-      "hora": "14:00"
-    }
-  },
-  "metadata": {
-    "intent": "SCHEDULING",
-    "sentiment": "positivo"
-  }
-}
-```
-
-**Exemplo 3: Cliente especifica tudo de uma vez**
-
-```json
-{
-  "cliente": {
-    "nome": "Pedro Oliveira",
-    "email": "pedro@email.com",
-    "mensagem": "Quero agendar limpeza de pele com a Ana no dia 10/12 às 10h"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "response_text": "Agendamento confirmado Pedro! Limpeza de Pele com Ana Ribeiro no dia 10/12/2025 às 10h. Te esperamos lá!",
-  "kanban_status": "Agendado",
-  "directives": {
-    "type": "appointment_confirmation",
-    "payload_update": null,
-    "payload_appointment": {
-      "profissional_id": "A1",
-      "profissional_name": "Ana Ribeiro",
-      "servico_id": "S1",
-      "servico_name": "Limpeza de Pele",
-      "data": "2025-12-10",
-      "hora": "10:00"
-    }
-  },
-  "metadata": {
-    "intent": "SCHEDULING",
-    "sentiment": "positivo"
-  }
-}
-```
-
-**Exemplo 4: Cliente usa gíria "topo"**
-
-```json
-{
-  "cliente": {
-    "mensagem": "Topo! Fecha aí"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "response_text": "Fechado! Consulta Fisioterapia com Maria Santos, quinta-feira 10/12/2025 às 13h. Duração: 60min. Valor: R$ 150,00.",
-  "kanban_status": "Agendado",
-  "directives": {
-    "type": "appointment_confirmation",
-    "payload_update": null,
-    "payload_appointment": {
-      "profissional_id": "A2",
-      "profissional_name": "Maria Santos",
-      "servico_id": "S3",
-      "servico_name": "Consulta Fisioterapia",
-      "data": "2025-12-10",
-      "hora": "13:00"
-    }
-  },
-  "metadata": {
-    "intent": "SCHEDULING",
-    "sentiment": "positivo"
-  }
-}
-```
-
----
-
-### ❌ Exemplos de Casos INVÁLIDOS para `appointment_confirmation`
-
-**Caso 1: Falta especificar o horário**
-
-```json
-{
-  "cliente": {
-    "mensagem": "Quero com a Ana na quinta"
-  }
-}
-```
-
-**Response (correto = type: "normal"):**
-```json
-{
-  "response_text": "Para agendar com Ana na quinta, tenho 9h, 10h ou 13h disponíveis. Qual horário prefere?",
-  "directives": {
-    "type": "normal"
-  }
-}
-```
-
-**Caso 2: Falta confirmar explicitamente**
-
-```json
-{
-  "cliente": {
-    "mensagem": "E quinta de manhã tem?"
-  }
-}
-```
-
-**Response (correto = type: "normal"):**
-```json
-{
-  "response_text": "Sim! Quinta de manhã tenho Ana às 9h e às 10h. Confirma qual?",
-  "directives": {
-    "type": "normal"
-  }
-}
-```
-
-**Caso 3: Cliente está só perguntando**
-
-```json
-{
-  "cliente": {
-    "mensagem": "Quais horários tem com a Ana?"
-  }
-}
-```
-
-**Response (correto = type: "normal"):**
-```json
-{
-  "response_text": "Com Ana tenho: quinta às 9h, 10h ou sexta às 14h. Qual prefere?",
-  "directives": {
-    "type": "normal"
-  }
-}
-```
-
----
-
-### 🔄 Fluxo Completo: Do Primeiro Contato ao Agendamento
-
-**Interação 1: Primeiro contato**
-```
-Cliente: "Oi"
-Bot: "Olá! Bem-vindo à Clínica ABC. Para agendar, preciso do seu nome completo e email."
-Diretiva: type="normal"
-```
-
-**Interação 2: Cliente dá nome**
-```
-Cliente: "João Silva"
-Bot: "Obrigado João! Agora preciso do seu email."
-Diretiva: type="update_user", payload_update={"nome": "João Silva"}
-```
-
-**Interação 3: Cliente dá email**
-```
-Cliente: "joao@email.com"
-Bot: "Perfeito! Qual serviço você deseja?"
-Diretiva: type="update_user", payload_update={"email": "joao@email.com"}
-```
-
-**Interação 4: Cliente escolhe serviço**
-```
-Cliente: "Limpeza de pele"
-Bot: "Para Limpeza de Pele tenho: Ana quinta às 9h ou Maria sexta às 10h. Qual prefere?"
-Diretiva: type="normal"
-```
-
-**Interação 5: Cliente confirma**
-```
-Cliente: "Confirmo quinta às 9h"
-Bot: "Agendado! Limpeza de Pele com Ana, quinta 10/12 às 9h. Até lá!"
-Diretiva: type="appointment_confirmation", payload_appointment={...todos os 4 campos}
-```
-
-**Status Codes:**
-
-- `200` - Sucesso
-- `400` - Dados inválidos
-- `422` - Schema inválido
-- `500` - Erro interno
-- `503` - Serviço OpenAI indisponível
-
----
-
 ### **2. Companies - Configuração de Empresas**
 
 #### `POST /companies/{company_id}/config`
@@ -826,23 +496,11 @@ Cria ou atualiza configuração comportamental de uma empresa.
 ```json
 {
   "nicho_mercado": "Clínica Médica",
-  "nome_bot": "Dr. Agenda",
-  "tom_voz": "Empático",
-  "nivel_empatia": "Alto",
-  "uso_emojis": "moderado",
-  "extensao_respostas": "concisa",
-  "estilo_tratamento": "Você",
-  "permitir_girias": false,
-  "enfase_confidencialidade": true,
-  "vocabularios_especificos": {
-    "cliente": "paciente"
-  },
-  "foco_conversa": "Agendamento Direto",
-  "estilo_persuasao": "suave",
-  "reacao_erros": "educada",
-  "frequencia_reforco_positivo": "baixa",
+  "tom_voz": "Profissional",
+  "idioma": "pt-BR",
+  "uso_emojis": true,
   "frequencia_cta": "normal",
-  "estilo_despedida": "padrão"
+  "estilo_despedida": "Até logo!"
 }
 ```
 
@@ -869,9 +527,11 @@ Recupera configuração de uma empresa.
   "company_id": "clinica_abc",
   "config": {
     "nicho_mercado": "Clínica Médica",
-    "nome_bot": "Dr. Agenda",
-    "tom_voz": "Empático",
-    // ... demais campos
+    "tom_voz": "Profissional",
+    "idioma": "pt-BR",
+    "uso_emojis": true,
+    "frequencia_cta": "normal",
+    "estilo_despedida": "Até logo!"
   }
 }
 ```
@@ -894,7 +554,6 @@ Lista todas as empresas configuradas (paginado).
   "companies": [
     {
       "company_id": "clinica_abc",
-      "nome_bot": "Dr. Agenda",
       "nicho_mercado": "Clínica Médica",
       "created_at": "2025-11-15T08:00:00Z",
       "updated_at": "2025-12-01T14:30:00Z"
@@ -1165,9 +824,12 @@ Ranking de empresas por consumo de tokens.
 
 ### **5. Sessões - Gerenciamento de Conversas**
 
-#### `GET /sessions/{customer_id}`
+#### `GET /sessions/{session_id}`
 
 Obtém histórico completo de uma sessão.
+
+**Path Parameters:**
+- `session_id` (string) - ID da sessão (normalmente o telefone do cliente)
 
 **Response (200):**
 
@@ -1221,11 +883,22 @@ Obtém histórico completo de uma sessão.
 }
 ```
 
+**Response (404):**
+
+```json
+{
+  "detail": "Sessao 5521999887766 nao encontrada"
+}
+```
+
 ---
 
-#### `DELETE /sessions/{customer_id}`
+#### `DELETE /sessions/{session_id}`
 
 Remove sessão (reset de conversa).
+
+**Path Parameters:**
+- `session_id` (string) - ID da sessão
 
 **Response (200):**
 
@@ -1240,9 +913,14 @@ Remove sessão (reset de conversa).
 
 ```json
 {
-  "detail": "Sessão não encontrada"
+  "detail": "Sessao 5521999887766 nao encontrada"
 }
 ```
+
+**Caso de Uso:**
+- Resetar conversa problemática
+- Limpar histórico para testes
+- Cliente solicitou exclusão de dados (LGPD)
 
 ---
 
@@ -1294,52 +972,521 @@ Verifica se todos os serviços estão funcionando.
 
 ---
 
-## Personalização por Empresa
+## 📋 Exemplos Detalhados por Tipo de Diretiva
 
-### 15 Dimensões Configuráveis
+### **Diretiva 1: `normal` - Conversação em Andamento**
 
-#### 1. Identidade e Nicho
-- `nicho_mercado`: Saúde, Estética, Jurídico, etc
-- `nome_bot`: Nome do assistente virtual
+**Quando usar:**
+- Cliente fazendo perguntas
+- Negociação de horários
+- Dúvidas sobre serviços
+- Primeira interação sem cadastro
+- Cancelamento solicitado
+- Handoff para humano
 
-#### 2. Segurança
-- `enfase_confidencialidade`: Reforço de avisos de privacidade
+**Exemplo 1: Cliente pergunta sobre preço**
 
-#### 3. Vocabulário
-- `vocabularios_especificos`: Dicionário de substituições
-- `permitir_girias`: Uso de linguagem informal
+```json
+{
+  "cliente": {
+    "telefone": "5521999887766",
+    "mensagem": "Quanto custa a limpeza de pele?"
+  }
+}
+```
 
-#### 4. Personalidade
-- `tom_voz`: Profissional, Amigável, Formal, Entusiasta
-- `nivel_empatia`: Baixo, Médio, Alto
-- `estilo_tratamento`: Você, Sr(a), Tu
-- `uso_emojis`: nenhum, moderado, intenso
+**Response:**
+```json
+{
+  "cliente_id": "5521999887766",
+  "company_id": "clinica_abc",
+  "response_text": "A Limpeza de Pele custa R$ 180,00 e tem duração de 60 minutos. Quer agendar?",
+  "kanban_status": "Dúvida/Info",
+  "directives": {
+    "type": "normal",
+    "payload_update": null,
+    "payload_appointment": null
+  },
+  "metadata": {
+    "intent": "INFO",
+    "sentiment": "neutro"
+  }
+}
+```
 
-#### 5. Fluxo de Conversa
-- `foco_conversa`: Objetivo principal do bot
-- `extensao_respostas`: concisa, detalhada
-- `estilo_persuasao`: suave, urgente
+**Exemplo 2: Cliente quer cancelar (primeira menção)**
 
-#### 6. Interação
-- `reacao_erros`: Como reagir a inputs inválidos
-- `frequencia_reforco_positivo`: Uso de feedback positivo
-- `frequencia_cta`: Frequência de chamadas para ação
-- `estilo_despedida`: Formato de encerramento
+```json
+{
+  "cliente": {
+    "telefone": "5521999887766",
+    "nome": "João Silva",
+    "email": "joao@email.com",
+    "mensagem": "Quero cancelar meu agendamento"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "response_text": "Entendo. Que tal reagendar? Tenho disponível terça às 14h ou quinta às 10h.",
+  "kanban_status": "Em Atendimento",
+  "directives": {
+    "type": "normal",
+    "payload_update": null,
+    "payload_appointment": null
+  },
+  "metadata": {
+    "intent": "CANCELLATION",
+    "sentiment": "neutro"
+  }
+}
+```
+
+**Exemplo 3: Cliente pede atendimento humano**
+
+```json
+{
+  "cliente": {
+    "mensagem": "Quero falar com um atendente"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "response_text": "Claro! Vou encaminhar você para atendimento humano. Aguarde um momento.",
+  "kanban_status": "Handoff Humano",
+  "directives": {
+    "type": "normal",
+    "payload_update": null,
+    "payload_appointment": null
+  },
+  "metadata": {
+    "intent": "HUMAN_HANDOFF",
+    "sentiment": "neutro"
+  }
+}
+```
 
 ---
 
-## Regras de Negócio
+### **Diretiva 2: `update_user` - Atualização de Cadastro**
+
+**Quando usar:**
+- Cliente fornece nome completo (mínimo 2 palavras)
+- Cliente fornece email válido (com @)
+- Cliente corrige telefone
+- Cliente atualiza qualquer dado pessoal
+
+**⚠️ IMPORTANTE:** Preencha apenas os campos que o cliente mencionou. Deixe os outros como `null`.
+
+**Exemplo 1: Cliente fornece apenas nome**
+
+```json
+{
+  "cliente": {
+    "telefone": "5521999887766",
+    "mensagem": "Meu nome é João Silva"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "response_text": "Obrigado João! Agora preciso do seu email para confirmar o cadastro.",
+  "kanban_status": "Em Atendimento",
+  "directives": {
+    "type": "update_user",
+    "payload_update": {
+      "nome": "João Silva",
+      "email": null,
+      "telefone": null
+    },
+    "payload_appointment": null
+  },
+  "metadata": {
+    "intent": "INFO",
+    "sentiment": "positivo"
+  }
+}
+```
+
+**Exemplo 2: Cliente fornece apenas email**
+
+```json
+{
+  "cliente": {
+    "telefone": "5521999887766",
+    "nome": null,
+    "mensagem": "joao.silva@email.com"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "response_text": "Email registrado! Preciso também do seu nome completo para finalizar o cadastro.",
+  "kanban_status": "Em Atendimento",
+  "directives": {
+    "type": "update_user",
+    "payload_update": {
+      "nome": null,
+      "email": "joao.silva@email.com",
+      "telefone": null
+    },
+    "payload_appointment": null
+  },
+  "metadata": {
+    "intent": "INFO",
+    "sentiment": "neutro"
+  }
+}
+```
+
+**Exemplo 3: Cliente fornece nome E email na mesma mensagem**
+
+```json
+{
+  "cliente": {
+    "telefone": "5521999887766",
+    "mensagem": "João Silva, joao@email.com"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "response_text": "Perfeito João! Cadastro completo. Qual serviço você deseja agendar?",
+  "kanban_status": "Em Atendimento",
+  "directives": {
+    "type": "update_user",
+    "payload_update": {
+      "nome": "João Silva",
+      "email": "joao@email.com",
+      "telefone": null
+    },
+    "payload_appointment": null
+  },
+  "metadata": {
+    "intent": "INFO",
+    "sentiment": "positivo"
+  }
+}
+```
+
+**Exemplo 4: Cliente corrige telefone**
+
+```json
+{
+  "cliente": {
+    "telefone": "5521999887766",
+    "nome": "João Silva",
+    "email": "joao@email.com",
+    "mensagem": "Meu telefone correto é 5521988776655"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "response_text": "Telefone atualizado para 5521988776655. Posso te ajudar com mais alguma coisa?",
+  "kanban_status": "Em Atendimento",
+  "directives": {
+    "type": "update_user",
+    "payload_update": {
+      "nome": null,
+      "email": null,
+      "telefone": "5521988776655"
+    },
+    "payload_appointment": null
+  },
+  "metadata": {
+    "intent": "INFO",
+    "sentiment": "neutro"
+  }
+}
+```
+
+---
+
+### **Diretiva 3: `appointment_confirmation` - Agendamento Confirmado**
+
+**Quando usar:**
+- Cliente confirmou TODOS os 4 elementos: profissional, serviço, data e hora
+- Cliente usou palavras de confirmação: "confirmo", "pode ser", "fechado", "topo", "marque"
+- Cliente repetiu data + hora + profissional explicitamente
+
+**⚠️ CRÍTICO:** Todos os 4 campos são obrigatórios:
+- `profissional_id` (ex: "A1", "A2")
+- `servico_id` (ex: "S1", "S2")
+- `data` (formato: YYYY-MM-DD)
+- `hora` (formato: HH:MM)
+
+Se faltar qualquer um desses campos, use `type: "normal"` ao invés de `appointment_confirmation`.
+
+**Exemplo 1: Cliente confirma opção oferecida**
+
+```json
+{
+  "cliente": {
+    "telefone": "5521999887766",
+    "nome": "João Silva",
+    "email": "joao@email.com",
+    "mensagem": "Confirmo quinta às 9h com a Ana"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "response_text": "Agendado! Limpeza de Pele com Ana Ribeiro, quinta-feira 10/12/2025 às 9h. Duração: 60min. Valor: R$ 180,00. Até lá!",
+  "kanban_status": "Agendado",
+  "directives": {
+    "type": "appointment_confirmation",
+    "payload_update": null,
+    "payload_appointment": {
+      "profissional_id": "A1",
+      "profissional_name": "Ana Ribeiro",
+      "servico_id": "S1",
+      "servico_name": "Limpeza de Pele",
+      "data": "2025-12-10",
+      "hora": "09:00"
+    }
+  },
+  "cost_info": {
+    "total_tokens": 512,
+    "input_tokens": 435,
+    "output_tokens": 77
+  },
+  "metadata": {
+    "intent": "SCHEDULING",
+    "sentiment": "positivo"
+  }
+}
+```
+
+**Exemplo 2: Cliente usa palavra-chave "pode ser"**
+
+```json
+{
+  "cliente": {
+    "nome": "Maria Santos",
+    "email": "maria@email.com",
+    "mensagem": "Pode ser sexta às 14h"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "response_text": "Confirmado! Peeling Facial com Maria Santos, sexta-feira 11/12/2025 às 14h. Duração: 60min. Valor: R$ 220,00.",
+  "kanban_status": "Agendado",
+  "directives": {
+    "type": "appointment_confirmation",
+    "payload_update": null,
+    "payload_appointment": {
+      "profissional_id": "A2",
+      "profissional_name": "Maria Santos",
+      "servico_id": "S2",
+      "servico_name": "Peeling Facial",
+      "data": "2025-12-11",
+      "hora": "14:00"
+    }
+  },
+  "metadata": {
+    "intent": "SCHEDULING",
+    "sentiment": "positivo"
+  }
+}
+```
+
+**Exemplo 3: Cliente especifica tudo de uma vez**
+
+```json
+{
+  "cliente": {
+    "nome": "Pedro Oliveira",
+    "email": "pedro@email.com",
+    "mensagem": "Quero agendar limpeza de pele com a Ana no dia 10/12 às 10h"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "response_text": "Agendamento confirmado Pedro! Limpeza de Pele com Ana Ribeiro no dia 10/12/2025 às 10h. Te esperamos lá!",
+  "kanban_status": "Agendado",
+  "directives": {
+    "type": "appointment_confirmation",
+    "payload_update": null,
+    "payload_appointment": {
+      "profissional_id": "A1",
+      "profissional_name": "Ana Ribeiro",
+      "servico_id": "S1",
+      "servico_name": "Limpeza de Pele",
+      "data": "2025-12-10",
+      "hora": "10:00"
+    }
+  },
+  "metadata": {
+    "intent": "SCHEDULING",
+    "sentiment": "positivo"
+  }
+}
+```
+
+**Exemplo 4: Cliente usa gíria "topo"**
+
+```json
+{
+  "cliente": {
+    "mensagem": "Topo! Fecha aí"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "response_text": "Fechado! Consulta Fisioterapia com Maria Santos, quinta-feira 10/12/2025 às 13h. Duração: 60min. Valor: R$ 150,00.",
+  "kanban_status": "Agendado",
+  "directives": {
+    "type": "appointment_confirmation",
+    "payload_update": null,
+    "payload_appointment": {
+      "profissional_id": "A2",
+      "profissional_name": "Maria Santos",
+      "servico_id": "S3",
+      "servico_name": "Consulta Fisioterapia",
+      "data": "2025-12-10",
+      "hora": "13:00"
+    }
+  },
+  "metadata": {
+    "intent": "SCHEDULING",
+    "sentiment": "positivo"
+  }
+}
+```
+
+---
+
+## ❌ Exemplos de Casos INVÁLIDOS para `appointment_confirmation`
+
+**Caso 1: Falta especificar o horário**
+
+```json
+{
+  "cliente": {
+    "mensagem": "Quero com a Ana na quinta"
+  }
+}
+```
+
+**Response (correto = type: "normal"):**
+```json
+{
+  "response_text": "Para agendar com Ana na quinta, tenho 9h, 10h ou 13h disponíveis. Qual horário prefere?",
+  "directives": {
+    "type": "normal"
+  }
+}
+```
+
+**Caso 2: Falta confirmar explicitamente**
+
+```json
+{
+  "cliente": {
+    "mensagem": "E quinta de manhã tem?"
+  }
+}
+```
+
+**Response (correto = type: "normal"):**
+```json
+{
+  "response_text": "Sim! Quinta de manhã tenho Ana às 9h e às 10h. Confirma qual?",
+  "directives": {
+    "type": "normal"
+  }
+}
+```
+
+**Caso 3: Cliente está só perguntando**
+
+```json
+{
+  "cliente": {
+    "mensagem": "Quais horários tem com a Ana?"
+  }
+}
+```
+
+**Response (correto = type: "normal"):**
+```json
+{
+  "response_text": "Com Ana tenho: quinta às 9h, 10h ou sexta às 14h. Qual prefere?",
+  "directives": {
+    "type": "normal"
+  }
+}
+```
+
+---
+
+## 🔄 Fluxo Completo: Do Primeiro Contato ao Agendamento
+
+**Interação 1: Primeiro contato**
+```
+Cliente: "Oi"
+Bot: "Olá! Bem-vindo à Clínica ABC. Para agendar, preciso do seu nome completo e email."
+Diretiva: type="normal"
+```
+
+**Interação 2: Cliente dá nome**
+```
+Cliente: "João Silva"
+Bot: "Obrigado João! Agora preciso do seu email."
+Diretiva: type="update_user", payload_update={"nome": "João Silva"}
+```
+
+**Interação 3: Cliente dá email**
+```
+Cliente: "joao@email.com"
+Bot: "Perfeito! Qual serviço você deseja?"
+Diretiva: type="update_user", payload_update={"email": "joao@email.com"}
+```
+
+**Interação 4: Cliente escolhe serviço**
+```
+Cliente: "Limpeza de pele"
+Bot: "Para Limpeza de Pele tenho: Ana quinta às 9h ou Maria sexta às 10h. Qual prefere?"
+Diretiva: type="normal"
+```
+
+**Interação 5: Cliente confirma**
+```
+Cliente: "Confirmo quinta às 9h"
+Bot: "Agendado! Limpeza de Pele com Ana, quinta 10/12 às 9h. Até lá!"
+Diretiva: type="appointment_confirmation", payload_appointment={...todos os 4 campos}
+```
 
 ### 1. Barreira de Cadastro
 
 O sistema bloqueia agendamento até ter:
 - Nome completo
 - Email válido
-
-Comportamento:
-- Solicita ambos na mesma mensagem
-- Mantém persistência educada
-- Ignora tentativas de agendamento sem cadastro completo
 
 ### 2. Protocolo de Oferta ("Ou/Ou")
 
@@ -1369,9 +1516,9 @@ Sempre apresentar opções concretas:
 | Novo Lead | Primeiro contato do cliente |
 | Em Atendimento | Conversação em andamento |
 | Agendado | Agendamento confirmado |
-| Reagendamento | Cliente solicitou alteração de data/hora |
-| Cancelado | Cliente cancelou agendamento |
-| Handoff Humano | Cliente solicitou atendimento humano |
+| Reagendamento | Cliente solicitou alteração |
+| Cancelado | Cliente cancelou |
+| Handoff Humano | Cliente solicitou atendente |
 | Dúvida/Info | Cliente tem dúvidas gerais |
 
 ---
@@ -1381,10 +1528,10 @@ Sempre apresentar opções concretas:
 | Intent | Descrição | Exemplo |
 |--------|-----------|---------|
 | SCHEDULING | Cliente quer marcar horário | "Quero marcar consulta" |
-| RESCHEDULE | Cliente quer alterar horário existente | "Preciso remarcar" |
+| RESCHEDULE | Cliente quer alterar horário | "Preciso remarcar" |
 | CANCELLATION | Cliente quer cancelar | "Quero cancelar" |
 | INFO | Cliente pede informações | "Quanto custa?" |
-| HUMAN_HANDOFF | Cliente quer falar com humano | "Quero falar com atendente" |
+| HUMAN_HANDOFF | Cliente quer falar com humano | "Quero atendente" |
 
 ---
 
@@ -1402,103 +1549,25 @@ Sempre apresentar opções concretas:
 
 ---
 
-## Estrutura do Projeto
+## Suporte Multi-Idioma
 
-```
-scheduling-bot/
-├── app/
-│   ├── main.py                    # FastAPI app principal
-│   ├── config.py                  # Configurações e variáveis de ambiente
-│   │
-│   ├── models/                    # Modelos Pydantic
-│   │   ├── agent.py              # Status, Sentiments, Intents
-│   │   ├── chat.py               # Request/Response
-│   │   ├── company.py            # Configuração de empresa
-│   │   ├── customer.py           # Perfil de cliente
-│   │   ├── scheduling.py         # Agenda e disponibilidade
-│   │   ├── usage.py              # Métricas de uso
-│   │   └── knowledge.py          # Knowledge base (RAG)
-│   │
-│   ├── services/                  # Camada de serviços
-│   │   ├── openai_service.py    # Integrações OpenAI
-│   │   ├── company_service.py   # Gestão de empresas
-│   │   ├── usage_service.py     # Tracking de tokens
-│   │   ├── session_service.py   # Gestão de sessões
-│   │   └── rag_service.py       # RAG e embeddings
-│   │
-│   ├── tools/                     # Tools do agente
-│   │   ├── sentiment_tool.py    # Análise de sentimento
-│   │   ├── intent_tool.py       # Análise de intenção
-│   │   └── availability_tool.py # Filtragem de agenda
-│   │
-│   ├── agent/                     # LangGraph
-│   │   ├── graph.py              # Definição do grafo
-│   │   ├── state.py              # Estado do grafo
-│   │   ├── prompts.py            # System prompts
-│   │   └── nodes/                # Nós do grafo
-│   │       ├── load_context.py
-│   │       ├── check_integrity.py
-│   │       ├── sentiment.py
-│   │       ├── intent.py
-│   │       ├── extract_entities.py
-│   │       ├── filter_availability.py
-│   │       ├── validate.py
-│   │       ├── respond.py
-│   │       ├── process_decision.py
-│   │       └── save.py
-│   │
-│   ├── database/                  # Camada de dados
-│   │   ├── mongodb.py            # Conexão MongoDB
-│   │   └── cache.py              # Cache em memória
-│   │
-│   └── schemas/                   # Schemas MongoDB
-│       ├── knowledge_base.py
-│       └── chat_session.py
-│
-├── requirements.txt               # Dependências Python
-├── .env.example                   # Template de variáveis
-├── run.sh                         # Script de execução
-└── README.md                      # Este arquivo
-```
+### Português (pt-BR)
+- Validações de nome (acentos)
+- Formatação de datas: DD/MM/YYYY
+- Moeda: R$
+- Horário: 24h
 
----
+### English (en-US)
+- Name validations (ASCII)
+- Date format: MM/DD/YYYY
+- Currency: $
+- Time: 12h AM/PM
 
-## Garantias do Sistema
-
-### 1. Execução Obrigatória de Tools
-
-O nó `validate` garante que:
-- Tool sentiment foi executada
-- Tool intent foi executada
-- Ambas retornaram resultados válidos
-- Ambas foram registradas em tools_called
-
-Se qualquer validação falhar, o fluxo é interrompido com erro claro.
-
-### 2. Validação de Diretivas
-
-O nó `process_directives` garante que:
-- `appointment_confirmation` tenha todos os 4 campos obrigatórios
-- IDs sejam válidos e existam na agenda
-- Nomes sejam enriquecidos automaticamente
-- Diretiva seja revertida para `normal` se inválida
-
-### 3. Economia de Tokens Garantida
-
-- Agenda completa NUNCA é enviada ao LLM
-- Apenas agenda filtrada (50-200 tokens) vai no prompt
-- Extração de entidades usa regex (0 tokens)
-- Cache reduz 90% das chamadas de tools
-
-### 4. Tracking Completo
-
-Todos os usos de LLM são registrados:
-- Company ID
-- Session ID
-- Tokens de input/output
-- Node que gerou o uso
-- Timestamp completo
-- Agregações por dia/semana/mês/ano
+### Español (es-LA)
+- Validaciones de nombre (tildes)
+- Formato de fecha: DD/MM/YYYY
+- Moneda: $
+- Horario: 24h
 
 ---
 
@@ -1512,171 +1581,494 @@ Todos os usos de LLM são registrados:
 | Extração entidades | 500 | 0 | 100% |
 | Histórico | 2000 | 200 | 90% |
 | Prompt base | 1500 | 300 | 80% |
-| Contexto cliente | 300 | 50 | 83.3% |
 | **TOTAL** | **12300** | **700** | **94.3%** |
 
 ### Custos Operacionais (GPT-4)
 
-| Volume | Sistema Tradicional | Sistema Otimizado | Economia Mensal |
-|--------|-------------------|------------------|-----------------|
-| 1000 sessões/dia | $250/dia | $14/dia | $7.080/mês |
-| 5000 sessões/dia | $1.250/dia | $70/dia | $35.400/mês |
-| 10000 sessões/dia | $2.500/dia | $140/dia | $70.800/mês |
-
-### Latência
-
-- Sistema tradicional: 3-5 segundos
-- Sistema otimizado: 1-2 segundos
-- Redução: 60%
-
----
-
-## Boas Práticas de Integração
-
-### 1. Idempotência
-
-Use `session_id` único e consistente para evitar duplicação.
-
-### 2. Retry Logic
-
-Implemente retry exponencial para erros 500:
-```
-Tentativa 1: 1s
-Tentativa 2: 2s
-Tentativa 3: 4s
-Máximo: 3 tentativas
-```
-
-### 3. Timeout
-
-Configure timeout de 30 segundos para requests.
-
-### 4. Processamento de Diretivas
-
-```python
-def handle_bot_response(response):
-    directives = response["directives"]
-
-    if directives["type"] == "update_user":
-        update_customer_data(directives["payload_update"])
-
-    elif directives["type"] == "appointment_confirmation":
-        appointment = directives["payload_appointment"]
-
-        # Criar agendamento no sistema
-        booking_id = create_booking(
-            customer_id=response["cliente_id"],
-            professional_id=appointment["profissional_id"],
-            service_id=appointment["servico_id"],
-            date=appointment["data"],
-            time=appointment["hora"],
-        )
-
-        # Marcar slot como ocupado
-        mark_slot_as_booked(appointment)
-
-        # Enviar notificações
-        send_confirmation_email(appointment)
-        send_confirmation_sms(appointment)
-        notify_professional(appointment)
-
-        # Atualizar CRM
-        update_kanban(response["cliente_id"], response["kanban_status"])
-```
-
-### 5. Atualização de Agenda
-
-Mantenha a agenda sincronizada:
-- Remova slots ocupados
-- Adicione novos horários
-- Atualize preços se necessário
-- Desative profissionais em férias
-
-### 6. Gestão do Knowledge Base (RAG)
-
-```python
-# Criar FAQs ao setup inicial
-faqs = [
-    {
-        "question": "Como funciona o pagamento?",
-        "answer": "Aceitamos cartão, PIX e dinheiro na recepção.",
-        "category": "pagamento",
-        "priority": 1
-    },
-    {
-        "question": "Qual o horário de funcionamento?",
-        "answer": "Segunda a sexta, 8h às 18h. Sábado, 8h às 12h.",
-        "category": "informacao",
-        "priority": 2
-    }
-]
-
-# Upload em massa
-response = requests.post(
-    "http://localhost:8000/knowledge/bulk",
-    json={
-        "company_id": "clinica_abc",
-        "entries": faqs
-    }
-)
-```
+| Volume | Tradicional | Otimizado | Economia/mês |
+|--------|-------------|-----------|--------------|
+| 1000 sessões/dia | $250/dia | $14/dia | $7.080 |
+| 5000 sessões/dia | $1.250/dia | $70/dia | $35.400 |
+| 10000 sessões/dia | $2.500/dia | $140/dia | $70.800 |
 
 ---
 
 ## Troubleshooting
 
-### Problema: Tokens muito altos
+### Problema: Sessão não encontrada (404)
 
-**Causa:** Sistema não está usando agenda filtrada
+**Sintoma:**
+```bash
+curl http://localhost:8000/sessions/5521999887766
+# Response: {"detail": "Sessao 5521999887766 nao encontrada"}
+```
 
-**Solução:** Verifique que `filtered_agenda` está sendo gerada no nó `filter_availability`
+**Causas Possíveis:**
+1. Session ID incorreto ou com formatação errada
+2. Sessão expirou (TTL de 30 dias padrão)
+3. Sessão nunca foi criada (nenhuma interação no `/chat`)
+4. MongoDB não está conectado ou inacessível
+
+**Soluções:**
+
+**1. Verificar se session_id está correto:**
+```bash
+curl http://localhost:8000/sessions/{session_id_exato}
+```
+
+**2. Verificar se sessão existe no MongoDB:**
+```javascript
+// MongoDB shell
+db.chat_sessions.findOne({session_id: "5521999887766"})
+```
+
+**3. Verificar TTL (Time To Live):**
+```javascript
+// Verificar se sessão expirou
+db.chat_sessions.findOne({
+  session_id: "5521999887766",
+  expires_at: {$gte: new Date()}
+})
+```
+
+**4. Criar nova sessão via /chat:**
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{...payload completo...}'
+```
+
+**5. Verificar conexão MongoDB:**
+```bash
+curl http://localhost:8000/health/ready
+# Deve retornar: {"status": "ready", "checks": {"mongodb": true}}
+```
+
+### Problema: Tokens muito altos (>3000 por request)
+
+**Sintoma:**
+```json
+{
+  "cost_info": {
+    "total_tokens": 8500,
+    "input_tokens": 8200,
+    "output_tokens": 300
+  }
+}
+```
+
+**Causa:** Sistema não está usando agenda filtrada corretamente.
+
+**Diagnóstico:**
+1. Verifique logs do nó `filter_availability`:
+```
+[FILTER] 0 opções encontradas  ❌ PROBLEMA
+[FILTER] 3 opções encontradas  ✅ OK
+```
+
+2. Verifique se `extracted_entities` tem dados:
+```python
+# Deve conter algo como:
+{
+  "service_name": "limpeza de pele",
+  "time_preference": "morning"
+}
+```
+
+**Soluções:**
+
+**1. Agenda vazia ou mal formatada:**
+```json
+// Verifique se request tem estrutura correta:
+{
+  "company": {
+    "agenda": {
+      "professionals": {...},
+      "services": {...},
+      "availability": {...}
+    }
+  }
+}
+```
+
+**2. Intent não é SCHEDULING:**
+```python
+# Se intent=INFO, não filtra agenda
+# Solução: Ajuste mensagem do cliente para ser mais clara sobre agendamento
+```
+
+**3. Extração de entidades falhou:**
+```python
+# Verifique regex patterns em extract_entities_node.py
+# Service/professional não foram detectados
+```
+
+**4. Force modo debug:**
+```python
+# Em filter_availability_node.py, adicione:
+logger.setLevel(logging.DEBUG)
+```
 
 ### Problema: LLM não confirma agendamento
 
-**Causa:** Dados incompletos ou ambíguos
+**Sintoma:**
+Cliente diz "Confirmo quinta às 9h" mas bot retorna `type: "normal"` ao invés de `appointment_confirmation`.
 
-**Solução:**
-- Verifique que cliente forneceu: serviço, profissional, data e hora
-- Confira logs do nó `extract_entities`
-- Valide que `filtered_agenda` tem opções
+**Causas:**
+
+**1. Dados incompletos (mais comum):**
+```python
+# Cliente não especificou: profissional, serviço, data OU hora
+# Solução: Bot deve perguntar o que falta
+```
+
+**2. Agenda filtrada vazia:**
+```python
+# filtered_agenda.options = []
+# Solução: Verifique disponibilidade real na agenda
+```
+
+**3. Cliente não usou palavra de confirmação:**
+```
+❌ "E quinta?"  # Pergunta, não confirmação
+❌ "Hum, quinta tá bom"  # Ambíguo
+✅ "Confirmo quinta"
+✅ "Pode ser quinta"
+✅ "Fechado"
+```
+
+**Soluções:**
+
+**1. Verificar logs do nó `respond`:**
+```
+[RESPOND] Gerando resposta do agente
+[RESPOND] Agenda context: "AGENDA: Cliente perguntou sobre..."  ❌
+[RESPOND] Agenda context: "Serviço: Limpeza de Pele..."  ✅
+```
+
+**2. Verificar extracted_entities:**
+```json
+{
+  "service_name": "limpeza",  // ✅ OK
+  "professional_name": "ana",  // ✅ OK
+  "date_specific": "2025-12-10",  // ✅ OK
+  "time_preference": "morning"  // ⚠️ Falta hora exata
+}
+```
+
+**3. Ajustar prompt se necessário:**
+```python
+# Em prompts.py, reforçar regra:
+"Para gerar appointment_confirmation, cliente DEVE ter confirmado EXPLICITAMENTE"
+```
 
 ### Problema: Validação de tools falha
 
-**Causa:** Tools não estão sendo executadas
+**Sintoma:**
+```
+[VALIDATE] ❌ VALIDAÇÃO FALHOU:
+  - ERRO: Sentiment analysis não foi executada
+  - ERRO: Intent analysis não foi executada
+```
 
-**Solução:**
-- Verifique ordem do grafo
-- Confirme que sentiment e intent estão antes de validate
-- Veja logs para identificar qual tool falhou
+**Causa:** Tools sentiment/intent não estão sendo executadas antes do nó `validate`.
+
+**Diagnóstico:**
+
+**1. Verificar ordem do grafo:**
+```python
+# Em graph.py, ordem DEVE ser:
+workflow.add_edge("check_integrity", "sentiment")  # ✅
+workflow.add_edge("sentiment", "intent")  # ✅
+workflow.add_edge("intent", "extract_entities")  # ✅
+workflow.add_edge("extract_entities", "filter_availability")  # ✅
+workflow.add_edge("filter_availability", "validate")  # ✅
+```
+
+**2. Verificar se tools retornam resultado:**
+```python
+# Em sentiment.py e intent.py:
+return {
+    **state,
+    "sentiment_result": result,  # ✅ Deve estar presente
+    "sentiment_analyzed": True,  # ✅ Flag obrigatória
+}
+```
+
+**Soluções:**
+
+**1. Verificar imports:**
+```python
+from ...tools import sentiment_tool, intent_tool  # ✅
+```
+
+**2. Verificar que tools_called é populado:**
+```python
+# Cada tool deve adicionar:
+"tools_called": ["sentiment"]  # sentiment_node
+"tools_called": ["intent"]  # intent_node
+```
+
+**3. Verificar logs de cada nó:**
+```
+[SENTIMENT] Analisando sentimento  ✅
+[SENTIMENT] Resultado: positivo (score: 80)  ✅
+[INTENT] Analisando intenção  ✅
+[INTENT] Resultado: SCHEDULING  ✅
+[VALIDATE] ✅ Tools validadas com sucesso  ✅
+```
 
 ### Problema: IDs incorretos na confirmação
 
-**Causa:** LLM não está usando IDs da agenda filtrada
+**Sintoma:**
+```json
+{
+  "payload_appointment": {
+    "profissional_id": "Ana Ribeiro",  // ❌ Deve ser "A1"
+    "servico_id": "Limpeza de Pele"  // ❌ Deve ser "S1"
+  }
+}
+```
 
-**Solução:**
-- Reforce no prompt o uso de IDs exatos
-- Verifique que `filtered_agenda` está formatada corretamente
-- Valide enriquecimento no `process_directives`
+**Causa:** LLM está usando nomes ao invés de IDs.
+
+**Soluções:**
+
+**1. Reforçar no prompt:**
+```python
+# Em prompts.py:
+"VALIDAÇÃO DE IDS (CRÍTICO)
+- profissional_id: use o ID EXATO da agenda (ex: 'A1', 'A2')
+- servico_id: use o ID EXATO da agenda (ex: 'S1', 'S2')
+- NÃO use nomes, use APENAS IDs"
+```
+
+**2. Verificar agenda filtrada:**
+```python
+# Em filtered_agenda, IDs devem estar visíveis:
+{
+  "options": [
+    {
+      "professional": "Ana Ribeiro",
+      "professional_id": "A1",  # ✅ ID presente
+      "service_id": "S1"  # ✅ ID presente
+    }
+  ]
+}
+```
+
+**3. Usar process_directives para validar:**
+```python
+# O nó já valida e reverte para "normal" se IDs inválidos
+# Verifique logs:
+[PROCESS] Profissional 'Ana Ribeiro' não encontrado, revertendo para normal  ❌
+[PROCESS] Diretiva validada com sucesso  ✅
+```
 
 ### Problema: RAG não está funcionando
 
-**Causa:** Índice vetorial não foi criado no MongoDB Atlas
+**Sintoma:**
+```python
+# Logs mostram:
+[RAG] ⚠️ Nenhuma FAQ encontrada para company_id=clinica_abc
+[RAG] ❌ Vector search falhou: Vector search index not found
+```
+
+**Causas:**
+
+**1. Índice vetorial não foi criado no MongoDB Atlas (mais comum)**
 
 **Solução:**
 1. Acesse MongoDB Atlas → Database → Search
 2. Verifique se o índice `knowledge_vector_index` existe
-3. Se não existir, crie conforme instruções na seção "Configuração do MongoDB Atlas"
-4. Aguarde o índice ser construído (pode levar alguns minutos)
-5. Teste com: `GET /knowledge?company_id=<id>`
+3. Se não existir, crie conforme instruções na seção "Configuração do MongoDB Atlas Vector Search Index"
+4. Aguarde o índice ser construído (5-10 minutos)
+5. Teste novamente
+
+**2. Nome do índice incorreto:**
+```javascript
+// Deve ser exatamente:
+"name": "knowledge_vector_index"
+
+// Não pode ser:
+"name": "vector_search"  // ❌
+"name": "knowledge_index"  // ❌
+```
+
+**3. Collection incorreta:**
+```javascript
+// Índice deve estar na collection:
+"company_knowledge_base"
+
+// Não em:
+"knowledge"  // ❌
+"faqs"  // ❌
+```
+
+**4. Nenhuma FAQ cadastrada:**
+```bash
+# Verificar no MongoDB:
+db.company_knowledge_base.countDocuments({
+  company_id: "clinica_abc",
+  is_active: true
+})
+# Deve retornar > 0
+```
+
+**Solução: Cadastrar FAQs:**
+```bash
+curl -X POST http://localhost:8000/knowledge \
+  -H "Content-Type: application/json" \
+  -d '{
+    "company_id": "clinica_abc",
+    "question": "Como funciona o pagamento?",
+    "answer": "Aceitamos cartão, PIX e dinheiro.",
+    "category": "pagamento",
+    "priority": 3
+  }'
+```
+
+**Diagnóstico avançado:**
+
+**1. Testar busca vetorial diretamente:**
+```javascript
+// No MongoDB shell:
+db.company_knowledge_base.aggregate([
+  {
+    $vectorSearch: {
+      index: "knowledge_vector_index",
+      path: "embedding",
+      queryVector: [...],  // 512 dimensões
+      numCandidates: 10,
+      limit: 5
+    }
+  }
+])
+```
+
+**2. Verificar logs detalhados:**
+```python
+# Em rag_service.py, linha do vector_search:
+logger.setLevel(logging.DEBUG)
+```
+
+**3. Testar fallback search:**
+```python
+# Se vector search falhar, sistema usa regex fallback
+# Verifique se FAQs aparecem mesmo sem índice:
+[RAG FALLBACK] ✅ 3 FAQs encontradas
+```
 
 ### Problema: Erro "Vector search index not found"
 
-**Causa:** Nome do índice incorreto ou índice ainda sendo construído
+**Sintoma:**
+```
+pymongo.errors.OperationFailure: $vectorSearch is not allowed or the request was malformed
+```
+
+**Causa:** Índice vetorial não existe ou está com configuração errada.
+
+**Solução definitiva:**
+
+**1. Verificar se índice existe:**
+```
+MongoDB Atlas → Database → Search → Indexes
+Procure por: "knowledge_vector_index"
+```
+
+**2. Deletar índice antigo (se existir com config errada):**
+```
+Click no índice → Delete
+```
+
+**3. Criar índice correto:**
+```json
+{
+  "name": "knowledge_vector_index",
+  "type": "vectorSearch",
+  "definition": {
+    "fields": [
+      {
+        "type": "vector",
+        "path": "embedding",
+        "numDimensions": 512,
+        "similarity": "cosine"
+      },
+      {
+        "type": "filter",
+        "path": "company_id"
+      },
+      {
+        "type": "filter",
+        "path": "is_active"
+      }
+    ]
+  }
+}
+```
+
+**4. Aplicar na collection correta:**
+- Database: `scheduling_bot`
+- Collection: `company_knowledge_base`
+
+**5. Aguardar build (5-10 minutos):**
+```
+Status: Building → Ready
+```
+
+**6. Testar:**
+```bash
+curl http://localhost:8000/knowledge?company_id=clinica_abc
+```
+
+### Problema: Multi-idioma não funciona
+
+**Sintoma:**
+Configurei `idioma: "en-US"` mas bot responde em português.
+
+**Causa:** Configuração não está sendo lida corretamente.
+
+**Diagnóstico:**
+
+**1. Verificar config no banco:**
+```javascript
+db.companies.findOne({company_id: "clinica_abc"})
+// Deve ter: config.idioma = "en-US"
+```
+
+**2. Verificar logs:**
+```
+[RESPOND] Gerando resposta do agente
+# Deve mostrar qual idioma está usando
+```
 
 **Solução:**
-- Verifique que o nome é exatamente `knowledge_vector_index`
-- Aguarde a construção do índice (5-10 minutos após criação)
-- Confira que a collection é `company_knowledge_base`
+
+**1. Atualizar config:**
+```bash
+curl -X POST http://localhost:8000/companies/clinica_abc/config \
+  -H "Content-Type: application/json" \
+  -d '{"nicho_mercado": "Medical Clinic", "idioma": "en-US"}'
+```
+
+**2. Usar config_override no request:**
+```json
+{
+  "company": {
+    "config_override": {
+      "nicho_mercado": "Medical Clinic",
+      "idioma": "en-US"
+    }
+  }
+}
+```
+
+**3. Verificar se prompt está traduzido:**
+```python
+# Em prompts.py, função build_optimized_prompt:
+if idioma == "en-US":
+    return _build_prompt_en_us(...)  # ✅
+```
 
 ---
 
@@ -1687,7 +2079,6 @@ response = requests.post(
 Nunca commite:
 - `OPENAI_API_KEY`
 - `MONGODB_URI` (se contiver credenciais)
-- Tokens de API de terceiros
 
 ### Rate Limiting (Recomendado)
 
@@ -1705,136 +2096,12 @@ Sistema valida automaticamente:
 
 ---
 
-## Exemplos de Uso
-
-### Exemplo 1: Primeira Interação - Sem Cadastro
-
-**Request:**
-```bash
-curl -X POST "http://localhost:8000/chat" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "session_id": "5521999887766",
-    "company": {
-      "id": "clinica_abc",
-      "nome": "Clínica ABC",
-      "agenda": { ... }
-    },
-    "cliente": {
-      "telefone": "5521999887766",
-      "mensagem": "Quero agendar"
-    }
-  }'
-```
-
-**Response:**
-```json
-{
-  "response_text": "Claro! Antes, preciso do seu nome completo e email para cadastro. Pode me passar?",
-  "kanban_status": "Novo Lead",
-  "directives": {
-    "type": "normal"
-  }
-}
-```
-
----
-
-### Exemplo 2: Cliente Fornece Dados
-
-**Request:**
-```json
-{
-  "cliente": {
-    "telefone": "5521999887766",
-    "mensagem": "João Silva, joao@email.com"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "response_text": "Perfeito João! Qual serviço você deseja agendar?",
-  "kanban_status": "Em Atendimento",
-  "directives": {
-    "type": "update_user",
-    "payload_update": {
-      "nome": "João Silva",
-      "email": "joao@email.com"
-    }
-  }
-}
-```
-
----
-
-### Exemplo 3: Cliente Solicita Serviço
-
-**Request:**
-```json
-{
-  "cliente": {
-    "nome": "João Silva",
-    "email": "joao@email.com",
-    "mensagem": "Limpeza de pele amanhã de manhã"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "response_text": "Para Limpeza de Pele tenho: Ana na quinta às 9h ou Maria na sexta às 10h. Qual prefere?",
-  "kanban_status": "Em Atendimento",
-  "directives": {
-    "type": "normal"
-  }
-}
-```
-
----
-
-### Exemplo 4: Cliente Confirma
-
-**Request:**
-```json
-{
-  "cliente": {
-    "nome": "João Silva",
-    "email": "joao@email.com",
-    "mensagem": "Confirmo quinta às 9h com Ana"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "response_text": "Agendado! Limpeza de Pele com Ana Ribeiro, quinta-feira 10/12 às 9h. Duração: 60min. Valor: R$ 180. Até lá!",
-  "kanban_status": "Agendado",
-  "directives": {
-    "type": "appointment_confirmation",
-    "payload_appointment": {
-      "profissional_id": "A1",
-      "profissional_name": "Ana Ribeiro",
-      "servico_id": "S1",
-      "servico_name": "Limpeza de Pele",
-      "data": "2025-12-10",
-      "hora": "09:00"
-    }
-  }
-}
-```
-
----
-
 ## Roadmap
 
 ### v2.2 (Próximo)
-- Suporte a múltiplos idiomas
 - Webhooks para notificações em tempo real
 - Dashboard de métricas
+- Migration automática de configs antigas
 
 ### v2.3
 - Lembretes automáticos (SMS/Email)
@@ -1848,189 +2115,22 @@ curl -X POST "http://localhost:8000/chat" \
 
 ---
 
-## Monitoramento e Logs
-
-### Estrutura de Logs
-
-Sistema gera logs estruturados em todos os nós:
-```
-[LOAD_CONTEXT] Iniciando sessão 5521999887766
-[LOAD_CONTEXT] Histórico: 10 msgs, Recente: 4 msgs
-[LOAD_CONTEXT] RAG: 3 FAQs recuperadas
-[CHECK_INTEGRITY] Dados incompletos. Nome: True, Email: False
-[SENTIMENT] Resultado: positivo (score: 80, confiança: alta)
-[INTENT] Resultado: SCHEDULING - Cliente quer marcar horário
-[EXTRACT] Entidades: {'service_name': 'limpeza de pele', 'time_preference': 'morning'}
-[FILTER] 2 opções encontradas
-[VALIDATE] ✅ Tools validadas com sucesso
-[RESPOND] Tokens usados: 435 input + 77 output = 512 total
-[PROCESS] Diretiva: appointment_confirmation | Kanban: Agendado
-[SAVE_SESSION] Sessão salva com sucesso
-```
-
-### Níveis de Log
-
-Configure via `.env`:
-```bash
-LOG_LEVEL=INFO  # DEBUG | INFO | WARNING | ERROR
-```
-
-- **DEBUG**: Todos os detalhes internos
-- **INFO**: Fluxo principal e decisões
-- **WARNING**: Situações atípicas mas controladas
-- **ERROR**: Erros que requerem atenção
-
----
-
-## Testes
-
-### Teste de Importações
-
-```bash
-python test_import.py
-```
-
-Verifica que todos os módulos estão importando corretamente.
-
-### Teste de Health Check
-
-```bash
-curl http://localhost:8000/health
-```
-
-**Response esperada:**
-```json
-{
-  "status": "healthy",
-  "service": "scheduling-bot-v2-optimized",
-  "version": "2.1.0"
-}
-```
-
-### Teste de Readiness
-
-```bash
-curl http://localhost:8000/health/ready
-```
-
-**Response esperada (tudo OK):**
-```json
-{
-  "status": "ready",
-  "checks": {
-    "mongodb": true,
-    "openai": true
-  }
-}
-```
-
----
-
-## Performance Tips
-
-### 1. Use Cache Agressivamente
-
-O sistema já implementa cache para:
-- Análise de sentimento (1 hora)
-- Análise de intenção (30 minutos)
-- Busca RAG (1 hora)
-
-### 2. Configure Batch de FAQs
-
-Ao criar múltiplas FAQs, use o endpoint `/knowledge/bulk` ao invés de criar uma por uma:
-
-```python
-# ❌ Lento - 10 requests
-for faq in faqs:
-    requests.post("/knowledge", json=faq)
-
-# ✅ Rápido - 1 request
-requests.post("/knowledge/bulk", json={"entries": faqs})
-```
-
-### 3. Limite o Histórico
-
-Configure quantas mensagens recentes são carregadas:
-
-```python
-# Em session_service.py
-recent_history = await session_service.get_recent_history(
-    session_id=state["session_id"],
-    n=4  # Ajuste conforme necessário (4-10)
-)
-```
-
-### 4. Otimize a Agenda
-
-Mantenha a agenda compacta:
-- Remova slots passados diariamente
-- Limite visualização a 30 dias futuros
-- Use IDs curtos (A1, S1) ao invés de UUIDs
-
----
-
-## Suporte e Contribuição
-
-### Documentação Adicional
-
-- Documentação interativa: `http://localhost:8000/docs`
-- Swagger UI: `http://localhost:8000/redoc`
-
-### Issues e Bugs
-
-Para reportar problemas:
-1. Verifique logs em `logs/`
-2. Inclua o `session_id` afetado
-3. Compartilhe request/response completos
-4. Mencione versão do Python e dependências
-
-### Contribuindo
-
-Pull requests são bem-vindos! Por favor:
-1. Siga o estilo de código existente
-2. Adicione testes para novas features
-3. Atualize documentação
-4. Mantenha commits descritivos
-
----
-
 ## FAQ
 
 ### P: Como adicionar novo idioma?
 
-**R:** Atualmente o sistema opera em português. Para adicionar idiomas:
-1. Traduza os prompts em `app/agent/prompts.py`
-2. Adicione campo `language` na configuração da empresa
-3. Implemente detecção automática ou permita escolha manual
+**R:** Edite `app/agent/prompts.py`:
+1. Adicione novo idioma no enum: `Literal["pt-BR", "en-US", "es-LA", "fr-FR"]`
+2. Crie função `_build_prompt_fr_fr()`
+3. Adicione tradução em `CONFIDENTIALITY_DISCLAIMER`
+4. Implemente funções auxiliares `_get_*_rule_fr()`
 
-### P: Posso usar outro LLM além do OpenAI?
+### P: Como mudar valores padrão?
 
-**R:** Sim, mas requer modificações:
-1. Substitua `openai_service.py` com novo provider
-2. Ajuste formato de response
-3. Teste compatibilidade com embeddings (512 dimensões)
-
-### P: Como escalar para milhões de sessões?
-
-**R:**
-1. Use MongoDB Atlas com cluster M10+
-2. Implemente Redis para cache distribuído
-3. Configure load balancer
-4. Ative MongoDB sharding por `company_id`
-5. Considere microserviços para tools pesadas
-
-### P: O sistema suporta WhatsApp direto?
-
-**R:** Não nativamente. Integre com:
-- Twilio WhatsApp API
-- WhatsApp Business API oficial
-- Plataformas como Wati ou Zenvia
-
-### P: Como funciona o TTL das sessões?
-
-**R:** Sessões expiram após 30 dias (configurável). MongoDB deleta automaticamente via índice TTL. Configure em `.env`:
-```bash
-SESSION_TTL_DAYS=30
+**R:** Edite `app/models/company.py`:
+```python
+tom_voz: Literal[...] = "Amigável"
+uso_emojis: bool = False
 ```
 
 ---
