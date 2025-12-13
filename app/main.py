@@ -26,9 +26,7 @@ from .services.company_service import company_service
 from .services.session_service import session_service
 from .services.rag_service import rag_service
 from .schemas import ChatSession
-from .services.openai_service import (
-    openai_service,
-)  # Importação adicionada para readiness_check
+from .services.openai_service import openai_service
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL),
@@ -41,7 +39,6 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Iniciando Bot Agendador Multi-Nicho v2.1 (OTIMIZADO)")
     await mongodb.connect()
-    # Usando settings.REDIS_URL conforme inferido do código original
     app.state.redis = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
     logger.info("Sistema pronto")
     yield
@@ -66,6 +63,47 @@ app.add_middleware(
 )
 
 
+def validate_agenda_structure(agenda: dict) -> None:
+    if not agenda:
+        raise HTTPException(status_code=400, detail="Campo 'agenda' é obrigatório")
+
+    if not agenda.get("professionals"):
+        raise HTTPException(
+            status_code=400,
+            detail="Agenda deve conter pelo menos um profissional em 'professionals'",
+        )
+
+    if not agenda.get("services"):
+        raise HTTPException(
+            status_code=400,
+            detail="Agenda deve conter pelo menos um serviço em 'services'",
+        )
+
+    if not agenda.get("availability"):
+        raise HTTPException(
+            status_code=400,
+            detail="Agenda deve conter pelo menos um horário disponível em 'availability'",
+        )
+
+    has_slots = False
+    for prof_id, services_data in agenda["availability"].items():
+        for service_id, dates_data in services_data.items():
+            for date, slots in dates_data.items():
+                if slots and len(slots) > 0:
+                    has_slots = True
+                    break
+            if has_slots:
+                break
+        if has_slots:
+            break
+
+    if not has_slots:
+        raise HTTPException(
+            status_code=400,
+            detail="Agenda deve conter pelo menos um horário disponível",
+        )
+
+
 @app.post("/chat", tags=["Chat"])
 async def chat_endpoint(request: ChatRequest):
     try:
@@ -73,6 +111,8 @@ async def chat_endpoint(request: ChatRequest):
             f"[CHAT] Nova interacao. Sessao: {request.session_id} | "
             f"Empresa: {request.company.nome}"
         )
+
+        validate_agenda_structure(request.company.agenda)
 
         session = await session_service.get_session(request.session_id)
 

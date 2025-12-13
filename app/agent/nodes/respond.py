@@ -86,6 +86,25 @@ async def agent_respond_node(state: GraphState) -> GraphState:
 
 def _build_agenda_context(state: GraphState) -> str:
 
+    intent = state["intent_result"].intent
+
+    if intent not in ["SCHEDULING", "RESCHEDULE"]:
+        full_agenda = state.get("full_agenda")
+        if not full_agenda:
+            return "AGENDA: Aguardando cliente definir interesse em agendamento."
+
+        services_list = []
+        for service_id, service_info in full_agenda.services.items():
+            services_list.append(
+                f"- {service_info.name}: R$ {service_info.price:.2f} ({service_info.duration}min)"
+            )
+
+        return (
+            "SERVIÇOS DISPONÍVEIS:\n"
+            + "\n".join(services_list)
+            + "\n\nQuando o cliente demonstrar interesse em agendar, ofereça opções específicas de horários."
+        )
+
     filtered = state.get("filtered_agenda")
 
     if not filtered or not filtered.options:
@@ -99,11 +118,10 @@ def _build_agenda_context(state: GraphState) -> str:
 
 
 def _format_customer_context(profile) -> str:
-    """Formata contexto do cliente de forma compacta"""
     status = "COMPLETO" if profile.get("is_data_complete") else "INCOMPLETO"
 
     return (
         f"Nome: {profile.get('nome') or 'Não informado'} | "
-        f"Email: {profile.get('email') or 'Não informado'} | "
+        f"Email: {profile.get('email') or 'Não informado (OPCIONAL)'} | "
         f"Cadastro: {status}"
     )
