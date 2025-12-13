@@ -105,3 +105,6 @@ class AvailabilityTool:
         except Exception as e:
             logger.error(f"[AVAILABILITY] Erro ao filtrar: {e}", exc_info=True)
             return FilteredAgenda(options=[])
+
+
+availability_tool = AvailabilityTool()
