@@ -26,6 +26,9 @@ from .services.company_service import company_service
 from .services.session_service import session_service
 from .services.rag_service import rag_service
 from .schemas import ChatSession
+from .services.openai_service import (
+    openai_service,
+)  # Importação adicionada para readiness_check
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL),
@@ -38,7 +41,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Iniciando Bot Agendador Multi-Nicho v2.1 (OTIMIZADO)")
     await mongodb.connect()
-    app.state.redis = await create_pool(RedisSettings(host="localhost", port=6379))
+    # Usando settings.REDIS_URL conforme inferido do código original
+    app.state.redis = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
     logger.info("Sistema pronto")
     yield
     logger.info("Encerrando")
@@ -172,13 +176,13 @@ async def chat_endpoint(request: ChatRequest):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Servico de IA temporariamente indisponivel",
-        )
+        ) from e
     except Exception as e:
         logger.error(f"[CHAT] Erro nao tratado: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Erro interno do servidor",
-        )
+        ) from e
 
 
 @app.post("/sessions/{session_id}/owner-interaction", tags=["Sessions"])
@@ -216,7 +220,9 @@ async def create_or_update_company_config(company_id: str, config: CompanyConfig
         }
     except Exception as e:
         logger.error(f"Erro ao criar/atualizar config: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Erro ao processar configuracao")
+        raise HTTPException(
+            status_code=500, detail="Erro ao processar configuracao"
+        ) from e
 
 
 @app.get("/companies/{company_id}/config", tags=["Companies"])
@@ -226,17 +232,18 @@ async def get_company_config(company_id: str):
         return {"company_id": company_id, "config": config}
     except Exception as e:
         logger.error(f"Erro ao buscar config: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Erro ao buscar configuracao")
+        raise HTTPException(
+            status_code=500, detail="Erro ao buscar configuracao"
+        ) from e
 
 
 @app.get("/companies", tags=["Companies"])
 async def list_companies(skip: int = 0, limit: int = 50):
     try:
-        result = await company_service.list_companies(skip, limit)
-        return result
+        return await company_service.list_companies(skip, limit)
     except Exception as e:
         logger.error(f"Erro ao listar companies: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Erro ao listar empresas")
+        raise HTTPException(status_code=500, detail="Erro ao listar empresas") from e
 
 
 @app.delete("/companies/{company_id}/config", tags=["Companies"])
@@ -250,7 +257,9 @@ async def delete_company_config(company_id: str):
         raise
     except Exception as e:
         logger.error(f"Erro ao deletar config: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Erro ao deletar configuracao")
+        raise HTTPException(
+            status_code=500, detail="Erro ao deletar configuracao"
+        ) from e
 
 
 @app.post("/knowledge", tags=["Knowledge Base"], status_code=201)
@@ -259,7 +268,7 @@ async def create_knowledge_entry(
     entry: KnowledgeEntryCreate,
 ):
     try:
-        if not company_id or len(company_id.strip()) == 0:
+        if not company_id or not company_id.strip():
             raise HTTPException(status_code=400, detail="company_id é obrigatório")
 
         entry_id = await rag_service.create_knowledge(
@@ -281,11 +290,14 @@ async def create_knowledge_entry(
     except OpenAIError as e:
         logger.error(f"[KNOWLEDGE] Erro OpenAI: {e}", exc_info=True)
         raise HTTPException(
-            status_code=503, detail="Serviço de embeddings temporariamente indisponível"
-        )
+            status_code=503,
+            detail="Serviço de embeddings temporariamente indisponível",
+        ) from e
     except Exception as e:
         logger.error(f"[KNOWLEDGE] Erro ao criar FAQ: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erro ao criar FAQ: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Erro ao criar FAQ: {str(e)}"
+        ) from e
 
 
 @app.get("/knowledge", response_model=KnowledgeListResponse, tags=["Knowledge Base"])
@@ -296,7 +308,7 @@ async def list_knowledge_entries(
     limit: int = 50,
 ):
     try:
-        if not company_id or len(company_id.strip()) == 0:
+        if not company_id or not company_id.strip():
             raise HTTPException(status_code=400, detail="company_id é obrigatório")
 
         if limit > 100:
@@ -315,7 +327,9 @@ async def list_knowledge_entries(
         raise
     except Exception as e:
         logger.error(f"[KNOWLEDGE] Erro ao listar FAQs: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erro ao listar FAQs: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Erro ao listar FAQs: {str(e)}"
+        ) from e
 
 
 @app.put("/knowledge/{entry_id}", tags=["Knowledge Base"])
@@ -327,12 +341,12 @@ async def update_knowledge_entry(
     try:
         try:
             ObjectId(entry_id)
-        except InvalidId:
+        except InvalidId as e:
             raise HTTPException(
                 status_code=400, detail=f"entry_id inválido: {entry_id}"
-            )
+            ) from e
 
-        if not company_id or len(company_id.strip()) == 0:
+        if not company_id or not company_id.strip():
             raise HTTPException(status_code=400, detail="company_id é obrigatório")
 
         updated = await rag_service.update_knowledge(
@@ -361,10 +375,14 @@ async def update_knowledge_entry(
         raise
     except OpenAIError as e:
         logger.error(f"[KNOWLEDGE] Erro OpenAI ao regenerar embedding: {e}")
-        raise HTTPException(status_code=503, detail="Erro ao regenerar embedding")
+        raise HTTPException(
+            status_code=503, detail="Erro ao regenerar embedding"
+        ) from e
     except Exception as e:
         logger.error(f"[KNOWLEDGE] Erro ao atualizar FAQ: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erro ao atualizar FAQ: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Erro ao atualizar FAQ: {str(e)}"
+        ) from e
 
 
 @app.delete("/knowledge/{entry_id}", tags=["Knowledge Base"])
@@ -375,12 +393,12 @@ async def delete_knowledge_entry(
     try:
         try:
             ObjectId(entry_id)
-        except InvalidId:
+        except InvalidId as e:
             raise HTTPException(
                 status_code=400, detail=f"entry_id inválido: {entry_id}"
-            )
+            ) from e
 
-        if not company_id or len(company_id.strip()) == 0:
+        if not company_id or not company_id.strip():
             raise HTTPException(status_code=400, detail="company_id é obrigatório")
 
         deleted = await rag_service.delete_knowledge(
@@ -402,7 +420,9 @@ async def delete_knowledge_entry(
         raise
     except Exception as e:
         logger.error(f"[KNOWLEDGE] Erro ao deletar FAQ: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erro ao deletar FAQ: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Erro ao deletar FAQ: {str(e)}"
+        ) from e
 
 
 @app.post(
@@ -453,10 +473,14 @@ async def bulk_create_knowledge(
         raise
     except OpenAIError as e:
         logger.error(f"[KNOWLEDGE] Erro OpenAI no bulk create: {e}", exc_info=True)
-        raise HTTPException(status_code=503, detail="Erro ao gerar embeddings em lote")
+        raise HTTPException(
+            status_code=503, detail="Erro ao gerar embeddings em lote"
+        ) from e
     except Exception as e:
         logger.error(f"[KNOWLEDGE] Erro no bulk create: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erro no bulk create: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Erro no bulk create: {str(e)}"
+        ) from e
 
 
 @app.get("/metrics/usage", tags=["Metrics"])
@@ -485,7 +509,7 @@ async def get_usage_metrics(
         }
     except Exception as e:
         logger.error(f"Erro metrics: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Erro ao buscar metricas")
+        raise HTTPException(status_code=500, detail="Erro ao buscar metricas") from e
 
 
 @app.get("/metrics/ranking", tags=["Metrics"])
@@ -495,7 +519,7 @@ async def get_company_ranking(period: str = "monthly", limit: int = 10):
         return {"period": period, "ranking": ranking}
     except Exception as e:
         logger.error(f"Erro ranking: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Erro ao buscar ranking")
+        raise HTTPException(status_code=500, detail="Erro ao buscar ranking") from e
 
 
 @app.get("/sessions/{session_id}", tags=["Sessions"])
@@ -517,7 +541,9 @@ async def get_session(session_id: str):
         raise
     except Exception as e:
         logger.error(f"[SESSIONS] Erro ao buscar sessao: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erro ao buscar sessao: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Erro ao buscar sessao: {str(e)}"
+        ) from e
 
 
 @app.delete("/sessions/{session_id}", tags=["Sessions"])
@@ -536,7 +562,9 @@ async def delete_session(session_id: str):
         raise
     except Exception as e:
         logger.error(f"[SESSIONS] Erro ao deletar sessao: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erro ao deletar sessao: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Erro ao deletar sessao: {str(e)}"
+        ) from e
 
 
 @app.get("/health", tags=["System"])
@@ -560,8 +588,6 @@ async def readiness_check():
         logger.error(f"MongoDB health check failed: {e}")
 
     try:
-        from .services.openai_service import openai_service
-
         test_embedding = await openai_service.get_embedding("test")
         if len(test_embedding) > 0:
             checks["openai"] = True
@@ -571,10 +597,13 @@ async def readiness_check():
     all_healthy = all(checks.values())
     status_code = 200 if all_healthy else 503
 
-    return {
-        "status": "ready" if all_healthy else "not_ready",
-        "checks": checks,
-    }, status_code
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "ready" if all_healthy else "not_ready",
+            "checks": checks,
+        },
+    )
 
 
 if __name__ == "__main__":
