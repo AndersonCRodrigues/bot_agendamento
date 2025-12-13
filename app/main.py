@@ -13,13 +13,25 @@ from arq.connections import RedisSettings
 from .config import settings
 from .database import mongodb
 from .agent import create_agent_graph, GraphState
-from .models import ChatRequest, CustomerProfile, CompanyConfig, CostInfo
+from .models import ChatRequest, ChatResponse, CustomerProfile, CompanyConfig, CostInfo
 from .models.knowledge import (
     KnowledgeEntryCreate,
     KnowledgeEntryUpdate,
     KnowledgeBulkCreate,
     KnowledgeListResponse,
     KnowledgeBulkResponse,
+)
+from .models.responses import (
+    GenericResponse,
+    OwnerInteractionResponse,
+    ConfigUpdateResponse,
+    ConfigResponse,
+    CompanyListResponse,
+    KnowledgeOpResponse,
+    UsageMetricsResponse,
+    RankingResponse,
+    HealthResponse,
+    SessionResponse,
 )
 from .services.usage_service import usage_service
 from .services.company_service import company_service
@@ -104,7 +116,7 @@ def validate_agenda_structure(agenda: dict) -> None:
         )
 
 
-@app.post("/chat", tags=["Chat"])
+@app.post("/chat", response_model=ChatResponse, tags=["Chat"])
 async def chat_endpoint(request: ChatRequest):
     try:
         logger.info(
@@ -225,7 +237,11 @@ async def chat_endpoint(request: ChatRequest):
         ) from e
 
 
-@app.post("/sessions/{session_id}/owner-interaction", tags=["Sessions"])
+@app.post(
+    "/sessions/{session_id}/owner-interaction",
+    response_model=OwnerInteractionResponse,
+    tags=["Sessions"],
+)
 async def owner_interaction(session_id: str, message: str):
     try:
         paused_until = datetime.now() + timedelta(minutes=10)
@@ -249,7 +265,11 @@ async def owner_interaction(session_id: str, message: str):
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@app.post("/companies/{company_id}/config", tags=["Companies"])
+@app.post(
+    "/companies/{company_id}/config",
+    response_model=ConfigUpdateResponse,
+    tags=["Companies"],
+)
 async def create_or_update_company_config(company_id: str, config: CompanyConfig):
     try:
         result = await company_service.create_or_update_config(company_id, config)
@@ -265,7 +285,9 @@ async def create_or_update_company_config(company_id: str, config: CompanyConfig
         ) from e
 
 
-@app.get("/companies/{company_id}/config", tags=["Companies"])
+@app.get(
+    "/companies/{company_id}/config", response_model=ConfigResponse, tags=["Companies"]
+)
 async def get_company_config(company_id: str):
     try:
         config = await company_service.get_config(company_id)
@@ -277,7 +299,7 @@ async def get_company_config(company_id: str):
         ) from e
 
 
-@app.get("/companies", tags=["Companies"])
+@app.get("/companies", response_model=CompanyListResponse, tags=["Companies"])
 async def list_companies(skip: int = 0, limit: int = 50):
     try:
         return await company_service.list_companies(skip, limit)
@@ -286,7 +308,9 @@ async def list_companies(skip: int = 0, limit: int = 50):
         raise HTTPException(status_code=500, detail="Erro ao listar empresas") from e
 
 
-@app.delete("/companies/{company_id}/config", tags=["Companies"])
+@app.delete(
+    "/companies/{company_id}/config", response_model=GenericResponse, tags=["Companies"]
+)
 async def delete_company_config(company_id: str):
     try:
         deleted = await company_service.delete_config(company_id)
@@ -302,7 +326,12 @@ async def delete_company_config(company_id: str):
         ) from e
 
 
-@app.post("/knowledge", tags=["Knowledge Base"], status_code=201)
+@app.post(
+    "/knowledge",
+    response_model=KnowledgeOpResponse,
+    tags=["Knowledge Base"],
+    status_code=201,
+)
 async def create_knowledge_entry(
     company_id: str,
     entry: KnowledgeEntryCreate,
@@ -372,7 +401,9 @@ async def list_knowledge_entries(
         ) from e
 
 
-@app.put("/knowledge/{entry_id}", tags=["Knowledge Base"])
+@app.put(
+    "/knowledge/{entry_id}", response_model=KnowledgeOpResponse, tags=["Knowledge Base"]
+)
 async def update_knowledge_entry(
     entry_id: str,
     company_id: str,
@@ -425,7 +456,9 @@ async def update_knowledge_entry(
         ) from e
 
 
-@app.delete("/knowledge/{entry_id}", tags=["Knowledge Base"])
+@app.delete(
+    "/knowledge/{entry_id}", response_model=GenericResponse, tags=["Knowledge Base"]
+)
 async def delete_knowledge_entry(
     entry_id: str,
     company_id: str,
@@ -523,7 +556,7 @@ async def bulk_create_knowledge(
         ) from e
 
 
-@app.get("/metrics/usage", tags=["Metrics"])
+@app.get("/metrics/usage", response_model=UsageMetricsResponse, tags=["Metrics"])
 async def get_usage_metrics(
     company_id: str = None,
     period: str = "daily",
@@ -552,7 +585,7 @@ async def get_usage_metrics(
         raise HTTPException(status_code=500, detail="Erro ao buscar metricas") from e
 
 
-@app.get("/metrics/ranking", tags=["Metrics"])
+@app.get("/metrics/ranking", response_model=RankingResponse, tags=["Metrics"])
 async def get_company_ranking(period: str = "monthly", limit: int = 10):
     try:
         ranking = await usage_service.get_company_ranking(period=period, limit=limit)
@@ -562,7 +595,7 @@ async def get_company_ranking(period: str = "monthly", limit: int = 10):
         raise HTTPException(status_code=500, detail="Erro ao buscar ranking") from e
 
 
-@app.get("/sessions/{session_id}", tags=["Sessions"])
+@app.get("/sessions/{session_id}", response_model=SessionResponse, tags=["Sessions"])
 async def get_session(session_id: str):
     try:
         session = await session_service.get_session(session_id)
@@ -586,7 +619,7 @@ async def get_session(session_id: str):
         ) from e
 
 
-@app.delete("/sessions/{session_id}", tags=["Sessions"])
+@app.delete("/sessions/{session_id}", response_model=GenericResponse, tags=["Sessions"])
 async def delete_session(session_id: str):
     try:
         deleted = await session_service.delete_session(session_id)
@@ -607,7 +640,7 @@ async def delete_session(session_id: str):
         ) from e
 
 
-@app.get("/health", tags=["System"])
+@app.get("/health", response_model=HealthResponse, tags=["System"])
 async def health_check():
     return {
         "status": "healthy",
@@ -616,7 +649,7 @@ async def health_check():
     }
 
 
-@app.get("/health/ready", tags=["System"])
+@app.get("/health/ready", response_model=HealthResponse, tags=["System"])
 async def readiness_check():
     checks = {"mongodb": False, "openai": False}
 
